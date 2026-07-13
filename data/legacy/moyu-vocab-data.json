@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "settings": {
+    "dailyNew": 20,
+    "autoReveal": false,
+    "answerFirst": false
+  },
+  "words": [
+    {
+      "id": "ability-1783752011886-0",
+      "word": "ability",
+      "meaning": "n. 能力；才能",
+      "phonetic": "/ə'bɪləti/",
+      "sentence": "The job requires the ability to focus under pressure.",
+      "status": "review",
+      "interval": 86400000,
+      "ease": 2.35,
+      "due": 1783838570632,
+      "wrongCount": 0,
+      "seenCount": 1,
+      "favorite": false,
+      "buriedUntil": 0,
+      "createdAt": 1783752011886,
+      "updatedAt": 1783752170632
+    },
+    {
+      "id": "spray-1783752011886-1",
+      "word": "spray",
+      "meaning": "v. 喷洒；n. 喷雾",
+      "phonetic": "/spreɪ/",
+      "sentence": "A fine spray covered the window.",
+      "status": "review",
+      "interval": 259200000,
+      "ease": 2.47,
+      "due": 1784011372551,
+      "wrongCount": 0,
+      "seenCount": 1,
+      "favorite": false,
+      "buriedUntil": 0,
+      "createdAt": 1783752011886,
+      "updatedAt": 1783752172551
+    },
+    {
+      "id": "question-1783752011886-2",
+      "word": "question",
+      "meaning": "n. 问题；v. 询问",
+      "phonetic": "/'kwestʃən/",
+      "sentence": "Good questions make learning faster.",
+      "status": "new",
+      "interval": 0,
+      "ease": 2.35,
+      "due": 0,
+      "wrongCount": 0,
+      "seenCount": 0,
+      "favorite": false,
+      "buriedUntil": 0,
+      "createdAt": 1783752011886,
+      "updatedAt": 1783752011886
+    },
+    {
+      "id": "centigrade-1783752011886-3",
+      "word": "centigrade",
+      "meaning": "adj. 摄氏的",
+      "phonetic": "/'sentɪɡreɪd/",
+      "sentence": "Water freezes at zero degrees centigrade.",
+      "status": "new",
+      "interval": 0,
+      "ease": 2.35,
+      "due": 0,
+      "wrongCount": 0,
+      "seenCount": 0,
+      "favorite": false,
+      "buriedUntil": 0,
+      "createdAt": 1783752011886,
+      "updatedAt": 1783752011886
+    },
+    {
+      "id": "brief-1783752011886-4",
+      "word": "brief",
+      "meaning": "adj. 简短的；n. 摘要",
+      "phonetic": "/briːf/",
+      "sentence": "Keep the answer brief and useful.",
+      "status": "new",
+      "interval": 0,
+      "ease": 2.35,
+      "due": 0,
+      "wrongCount": 0,
+      "seenCount": 0,
+      "favorite": false,
+      "buriedUntil": 0,
+      "createdAt": 1783752011886,
+      "updatedAt": 1783752011886
+    }
+  ],
+  "currentId": "question-1783752011886-2",
+  "history": [
+    "ability-1783752011886-0",
+    "spray-1783752011886-1"
+  ],
+  "revealed": false,
+  "session": {
+    "newLearned": 2,
+    "reviewed": 0,
+    "again": 0,
+    "startedAt": 1783752011886
+  }
+}

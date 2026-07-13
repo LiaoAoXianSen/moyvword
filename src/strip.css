@@ -1,0 +1,309 @@
+:root {
+  --bg: oklch(0.998 0.002 220);
+  --surface: oklch(0.96 0.014 220);
+  --surface-soft: oklch(0.982 0.006 220);
+  --ink: oklch(0.225 0.034 235);
+  --muted: oklch(0.505 0.028 235);
+  --line: oklch(0.875 0.02 220);
+  --primary: oklch(0.53 0.12 205);
+  --primary-soft: oklch(0.93 0.052 205);
+  --accent: oklch(0.5 0.105 252);
+  --success: oklch(0.56 0.12 155);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  background: transparent;
+  font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+}
+
+.strip {
+  height: 30px;
+  margin: 3px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 12% 0%, oklch(0.93 0.05 205 / 0.58), transparent 42%),
+    color-mix(in oklch, var(--bg) 92%, transparent);
+  box-shadow: 0 10px 28px oklch(0.22 0.04 235 / 0.16), 0 1px 2px oklch(0.2 0.03 235 / 0.08);
+  user-select: none;
+}
+
+.compact-row {
+  display: grid;
+  grid-template-columns: minmax(132px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  height: 28px;
+}
+
+.word-area {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 28px;
+  gap: 6px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0 10px;
+  color: var(--ink);
+  background: linear-gradient(90deg, var(--surface-soft), transparent);
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+#word {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#phonetic {
+  overflow: hidden;
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.is-compact #phonetic {
+  display: none;
+}
+
+body.is-compact .word-area {
+  padding-right: 11px;
+}
+
+body.is-compact #word {
+  font-size: 16px;
+}
+
+.quick-meaning {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 28px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  -webkit-app-region: drag;
+}
+
+.quick-actions,
+.rating-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+}
+
+.quick-actions {
+  height: 28px;
+  border-left: 1px solid var(--line);
+  background: color-mix(in oklch, var(--surface) 80%, white);
+}
+
+.details {
+  display: none;
+  padding: 9px 12px 10px;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(180deg, color-mix(in oklch, var(--bg) 88%, transparent), var(--surface-soft));
+}
+
+body.is-expanded .strip {
+  height: 124px;
+}
+
+body.is-expanded .details {
+  display: block;
+}
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+#meaning {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#sentence {
+  min-height: 15px;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button {
+  min-width: 23px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.rating-actions button {
+  min-width: 60px;
+  padding: 0 8px;
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--bg) 86%, transparent);
+}
+
+button:hover {
+  border-color: color-mix(in oklch, var(--primary) 42%, var(--line));
+  background: var(--primary-soft);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button[data-action="rate-again"] {
+  color: var(--primary);
+}
+
+button[data-action="rate-good"] {
+  color: var(--success);
+}
+
+button[data-action="rate-easy"] {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .strip {
+    transition: height 180ms ease-out;
+  }
+}
+
+/* v35 desktop strip: quiet, readable, and less like a sticky note. */
+:root {
+  --bg: oklch(0.998 0.002 220);
+  --surface: oklch(0.965 0.012 220);
+  --surface-soft: oklch(0.99 0.004 220);
+  --ink: oklch(0.23 0.034 235);
+  --muted: oklch(0.5 0.028 235);
+  --line: oklch(0.86 0.025 220);
+  --primary: oklch(0.52 0.12 205);
+  --primary-soft: oklch(0.93 0.05 205);
+  --accent: oklch(0.5 0.105 252);
+  --success: oklch(0.55 0.12 155);
+}
+
+.strip {
+  height: 30px;
+  margin: 2px;
+  border-color: oklch(0.82 0.032 220 / 0.9);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, oklch(1 0 0 / 0.93), oklch(0.965 0.012 220 / 0.93));
+  box-shadow: 0 8px 20px oklch(0.2 0.035 235 / 0.12), 0 1px 2px oklch(0.2 0.03 235 / 0.08);
+}
+
+.compact-row {
+  grid-template-columns: minmax(126px, auto) minmax(0, 1fr) auto;
+  height: 28px;
+}
+
+.word-area {
+  height: 28px;
+  gap: 5px;
+  padding: 0 9px;
+  background: linear-gradient(90deg, oklch(0.94 0.04 205 / 0.68), transparent 76%);
+}
+
+#word {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+#phonetic {
+  font-size: 10px;
+}
+
+.quick-meaning {
+  padding: 0 9px;
+  font-size: 11px;
+  line-height: 28px;
+}
+
+.quick-actions,
+.rating-actions {
+  gap: 2px;
+  padding: 3px;
+}
+
+.quick-actions {
+  height: 28px;
+  background: oklch(0.965 0.012 220 / 0.72);
+}
+
+button {
+  min-width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  color: oklch(0.34 0.045 235);
+}
+
+button:hover {
+  border-color: oklch(0.66 0.08 205);
+  color: oklch(0.35 0.1 205);
+  background: var(--primary-soft);
+}
+
+body.is-expanded .strip {
+  height: 118px;
+}
+
+.details {
+  padding: 8px 11px 9px;
+  background: linear-gradient(180deg, oklch(0.995 0.002 220 / 0.88), oklch(0.965 0.012 220 / 0.92));
+}
+
+#meaning {
+  font-size: 13px;
+}
+
+#sentence {
+  font-size: 11px;
+}
+
+.rating-actions button {
+  min-width: 56px;
+  border-color: oklch(0.84 0.024 220);
+  background: oklch(0.996 0.002 220 / 0.85);
+}

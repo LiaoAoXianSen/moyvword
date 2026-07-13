@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.dictionaryapi.dev https://dict.youdao.com https://*.youdao.com; media-src 'self' https://dict.youdao.com https://*.youdao.com; object-src 'none'; base-uri 'self'; form-action 'none'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>摸鱼单词v47版本</title>
+    <link rel="icon" href="../assets/icon.svg" />
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="mark">M</span>
+        <div>
+          <strong>摸鱼单词v47版本</strong>
+          <span id="activeBookName">默认单词本</span>
+        </div>
+      </div>
+      <nav class="side-nav" aria-label="主导航">
+        <button class="nav-item is-active" data-nav="dashboard" type="button"><span>⌂</span>首页</button>
+        <button class="nav-item" data-nav="words" type="button"><span>Aa</span>当前本单词</button>
+        <button class="nav-item" data-nav="records" type="button"><span>◷</span>学习记录</button>
+        <button class="nav-item" data-nav="bookManager" type="button"><span>▤</span>单词本管理</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button id="openLookup" class="settings-trigger" type="button"><span>⌕</span>查词</button>
+        <button id="openSettings" class="settings-trigger" type="button"><span>⚙</span>设置</button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <section class="dashboard-view" id="dashboardView" aria-label="学习面板">
+        <section class="summary">
+          <article>
+            <span>到期复习</span>
+            <strong id="dueCount">0</strong>
+          </article>
+          <article>
+            <span>错词优先</span>
+            <strong id="wrongCount">0</strong>
+          </article>
+          <article>
+            <span>短循环</span>
+            <strong id="learningCount">0</strong>
+          </article>
+          <article>
+            <span>待复习池</span>
+            <strong id="reviewDebt">0</strong>
+          </article>
+          <article>
+            <span>本书新词</span>
+            <strong id="freshCount">0</strong>
+          </article>
+          <article>
+            <span>总词数</span>
+            <strong id="totalCount">0</strong>
+          </article>
+        </section>
+
+        <section class="learning-board" aria-label="今日学习进度">
+          <div class="learning-board-head">
+            <div>
+              <span class="label">今日学习</span>
+              <h2>任务窗口、记忆阶段与待复习</h2>
+            </div>
+            <div class="plan-status">
+              <span id="planOverview">今日待开始</span>
+              <span class="plan-window" id="planWindow">学习窗口 0/15</span>
+            </div>
+          </div>
+          <div class="plan-lanes">
+            <div class="plan-lane">
+              <div><strong>新词计划</strong><span id="newPlanText">0/0</span></div>
+              <div class="progress-track" aria-hidden="true"><span id="newPlanProgress"></span></div>
+              <small id="newPlanHint">暂无新词</small>
+            </div>
+            <div class="plan-lane">
+              <div><strong>复习清理</strong><span id="reviewPlanText">0/0</span></div>
+              <div class="progress-track is-review" aria-hidden="true"><span id="reviewPlanProgress"></span></div>
+              <small id="reviewPlanHint">暂无到期复习</small>
+            </div>
+            <div class="plan-lane">
+              <div><strong>短循环</strong><span id="loopPlanText">0</span></div>
+              <div class="progress-track is-loop" aria-hidden="true"><span id="loopPlanProgress"></span></div>
+              <small id="loopPlanHint">当前没有短循环</small>
+            </div>
+          </div>
+          <section class="study-summary" aria-labelledby="studySummaryTitle">
+            <div class="subsection-head">
+              <div>
+                <strong id="studySummaryTitle">学习节奏</strong>
+                <span id="studyStreak">连续 0 天</span>
+              </div>
+              <span id="forecastTotal">未来 7 天待复习 0</span>
+            </div>
+            <div class="study-summary-grid">
+              <div class="study-history" id="studyHistory" aria-label="最近七天学习记录"></div>
+              <div class="study-forecast" id="studyForecast" aria-label="未来七天复习预测"></div>
+            </div>
+          </section>
+          <div class="learning-detail-grid">
+            <section class="stage-map" aria-labelledby="stageMapTitle">
+              <div class="subsection-head">
+                <div><strong id="stageMapTitle">记忆阶段</strong><span id="stageNewCount">待学 0</span></div>
+              </div>
+              <div class="stage-list" id="stageList"></div>
+            </section>
+            <section class="debt-queue" aria-labelledby="debtQueueTitle">
+              <div class="subsection-head">
+                <div><strong id="debtQueueTitle">待复习池</strong><span id="nextDueLabel">下一批：无</span></div>
+                <button class="text-action" id="openDebt" type="button">查看</button>
+              </div>
+              <div class="debt-rows">
+                <button class="debt-row is-urgent" data-debt-filter="debt" type="button"><span>重点复习</span><strong id="urgentDebtCount">0</strong></button>
+                <button class="debt-row" data-debt-filter="regular" type="button"><span>普通复习</span><strong id="regularDebtCount">0</strong></button>
+                <button class="debt-row" data-debt-filter="loopDue" type="button"><span>短期复习</span><strong id="loopDebtCount">0</strong></button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="book-progress" aria-labelledby="bookProgressTitle">
+          <div class="subsection-head">
+            <div>
+              <strong id="bookProgressTitle">词书进度</strong>
+              <span id="bookProgressSummary">按已开启单词统计</span>
+            </div>
+          </div>
+          <div class="book-progress-list" id="bookProgressList"></div>
+        </section>
+
+        <section class="now-card">
+          <div class="card-head">
+            <div>
+              <span class="label">当前横条单词</span>
+              <h1 id="currentWord">loading</h1>
+            </div>
+            <button id="favorite">收藏</button>
+          </div>
+          <p id="currentMeta"></p>
+          <div class="answer" id="currentAnswer"></div>
+          <div class="button-row">
+            <button data-action="reveal">看答案</button>
+            <button data-action="rate-again">不认识</button>
+            <button data-action="rate-hard">模糊</button>
+            <button data-action="rate-good">认识</button>
+            <button data-action="rate-easy">熟知</button>
+            <button data-action="next">跳过</button>
+          </div>
+        </section>
+      </section>
+
+      <section class="book-manager-view" id="bookManagerView" aria-labelledby="bookManagerTitle" hidden>
+        <div class="manager-head">
+          <div>
+            <h2 id="bookManagerTitle">单词本管理</h2>
+            <p>单词本只决定新词来源；学习记录按单词全局保留。</p>
+          </div>
+          <div class="manager-actions">
+            <button id="bookManagerAdd" type="button">新建单词本</button>
+          </div>
+        </div>
+        <section class="active-book-manager" aria-labelledby="activeBookManagerTitle">
+          <div class="active-book-manager-copy">
+            <span>当前单词本</span>
+            <h3 id="activeBookManagerTitle">未选择单词本</h3>
+            <p id="activeBookManagerMeta">--</p>
+          </div>
+          <label class="book-switch-control">
+            <span>切换单词本</span>
+            <select id="activeBookSelect" aria-label="切换当前单词本"></select>
+          </label>
+          <div class="active-book-actions">
+            <button id="bookManagerImport" type="button">导入词书</button>
+            <button id="bookManagerDownload" type="button">下载词书</button>
+            <button id="bookManagerRename" type="button">重命名</button>
+            <button id="bookManagerBackup" type="button">备份数据</button>
+            <button id="bookManagerDelete" type="button">删除当前本</button>
+          </div>
+          <p class="book-action-notice" id="bookActionNotice" role="status"></p>
+        </section>
+        <section class="other-books" aria-labelledby="otherBooksTitle">
+          <div class="subsection-head">
+            <div><strong id="otherBooksTitle">其他单词本</strong><span id="otherBooksCount">0 个可切换</span></div>
+          </div>
+          <div class="book-manager-list" id="bookManagerList"></div>
+        </section>
+      </section>
+
+      <dialog class="settings" id="settingsDialog" aria-labelledby="settingsTitle">
+        <div class="settings-head">
+          <h2 id="settingsTitle">设置</h2>
+          <button id="closeSettings" type="button">关闭</button>
+        </div>
+        <section class="settings-section storage-section" aria-labelledby="storageSettingsTitle">
+          <div>
+            <strong id="storageSettingsTitle">学习数据</strong>
+            <span id="storagePath"></span>
+            <span id="storageMirrorPath"></span>
+            <span id="backupDirectoryPath"></span>
+          </div>
+          <div class="storage-actions">
+            <button id="chooseBackupDirectory" type="button">选择备份目录</button>
+            <button id="clearBackupDirectory" type="button">清除</button>
+          </div>
+        </section>
+        <label>
+          <span>每日目标</span>
+          <input id="dailyNew" type="number" min="1" max="200" />
+        </label>
+        <label>
+          <span>学习窗口</span>
+          <input id="learningWindowSize" type="number" min="1" max="50" />
+        </label>
+        <p id="todayPlan"></p>
+        <label>
+          <span>默认显示答案</span>
+          <input id="answerFirst" type="checkbox" />
+        </label>
+        <label>
+          <span>切换单词时自动发音</span>
+          <input id="autoSpeak" type="checkbox" />
+        </label>
+        <label>
+          <span>发音音量</span>
+          <span class="volume-control">
+            <input id="audioVolume" type="range" min="0" max="100" step="5" aria-label="发音音量" />
+            <output id="audioVolumeValue" for="audioVolume">80%</output>
+          </span>
+        </label>
+        <section class="settings-section" aria-labelledby="stripSettingsTitle">
+          <div>
+            <strong id="stripSettingsTitle">横条窗口</strong>
+            <span>显示、隐藏或临时收起桌面小横条。</span>
+          </div>
+          <button id="showStrip" type="button">显示/隐藏横条</button>
+        </section>
+        <p class="shortcut-warning" id="shortcutWarning" hidden></p>
+        <div class="shortcut-list" id="shortcuts"></div>
+      </dialog>
+
+      <dialog class="settings lookup-dialog" id="lookupDialog" aria-labelledby="lookupTitle">
+        <div class="settings-head">
+          <h2 id="lookupTitle">查词</h2>
+          <button id="closeLookup" type="button">关闭</button>
+        </div>
+        <form class="lookup-form" id="lookupForm">
+          <input id="lookupInput" type="search" placeholder="输入英文单词" autocomplete="off" required />
+          <button type="submit">搜索</button>
+        </form>
+        <p id="lookupNotice" role="status"></p>
+        <div class="lookup-results" id="lookupResults"></div>
+      </dialog>
+
+      <dialog class="settings" id="downloadDialog" aria-labelledby="downloadTitle">
+        <div class="settings-head">
+          <h2 id="downloadTitle">下载词书</h2>
+          <button id="closeDownload" type="button">关闭</button>
+        </div>
+        <p id="downloadNotice">选择一个在线词书，会自动创建或切换到同名单词本。</p>
+        <div class="download-progress" id="downloadProgress" hidden role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <div id="downloadProgressBar"></div>
+        </div>
+        <div class="online-book-list" id="onlineBookList"></div>
+      </dialog>
+
+      <dialog class="settings continue-dialog" id="continueDialog" aria-labelledby="continueTitle">
+        <div class="settings-head">
+          <h2 id="continueTitle">今日计划已完成</h2>
+          <button id="closeContinue" type="button">关闭</button>
+        </div>
+        <p id="continueSummary">可以继续复习或加入新词。</p>
+        <section id="continueReviewBlock">
+          <label>
+            <span>继续复习</span>
+            <input id="continueReviewCount" type="number" min="1" max="200" value="10" />
+          </label>
+          <button id="continueReviewAdd" type="button">加入到期复习</button>
+        </section>
+        <section id="continueNewBlock">
+          <label>
+            <span>随机新词</span>
+            <input id="randomNewCount" type="number" min="1" max="200" value="50" />
+          </label>
+          <div class="dialog-actions">
+            <button id="previewRandomNew" type="button">随机挑选</button>
+            <button id="openManualNewPicker" type="button">自主选择</button>
+            <button id="confirmRandomNew" type="button" disabled>确认加入今日计划</button>
+          </div>
+          <div class="random-preview-list" id="randomPreviewList"></div>
+        </section>
+        <section id="manualNewBlock" hidden>
+          <div class="manual-new-head">
+            <label for="manualNewSearch">自主选择新词</label>
+            <button id="backToRandomNew" type="button">返回随机挑选</button>
+          </div>
+          <input id="manualNewSearch" type="search" placeholder="搜索单词、释义或音标" autocomplete="off" />
+          <div class="manual-new-list" id="manualNewList" aria-label="可选新词"></div>
+          <div class="dialog-actions">
+            <span id="manualNewCount" aria-live="polite">未选择</span>
+            <button id="confirmManualNew" type="button" disabled>加入今日计划</button>
+          </div>
+        </section>
+      </dialog>
+
+      <section class="word-manager" id="managerView" aria-labelledby="wordManagerTitle" hidden>
+        <div class="manager-head">
+          <div>
+            <h2 id="wordManagerTitle">词库管理</h2>
+            <p id="wordCountHint">可搜索、修改或手动补词。</p>
+          </div>
+          <button id="newWord" type="button">录入单词</button>
+        </div>
+        <div class="filter-tabs" aria-label="单词筛选">
+          <button class="filter-chip is-active" data-word-filter="all" type="button">全部</button>
+          <button class="filter-chip" data-word-filter="new" type="button">新词</button>
+          <button class="filter-chip" data-word-filter="due" type="button">待复习</button>
+          <button class="filter-chip" data-word-filter="wrong" type="button">错词</button>
+          <button class="filter-chip" data-word-filter="favorite" type="button">收藏</button>
+          <button class="filter-chip" data-word-filter="done" type="button">已掌握</button>
+        </div>
+        <div class="plan-toolbar" aria-label="今日计划操作">
+          <span id="planToolbarHint">当前本新词可加入今日学习</span>
+          <input id="managerRandomCount" type="number" min="1" max="200" value="50" aria-label="随机加入数量" />
+          <button id="addSelectedToPlan" type="button">所选加入今日学习</button>
+          <button id="managerRandomNew" type="button">随机加入今日学习</button>
+        </div>
+        <div class="bulk-toolbar" aria-label="批量管理">
+          <span id="bulkCount">未选择</span>
+          <button id="selectVisible" type="button">全选当前列表</button>
+          <button id="clearSelection" type="button">清空全部选择</button>
+          <div class="bulk-book-tools" id="bulkBookTools" hidden>
+            <label class="bulk-book-target">
+              <span>其他本</span>
+              <select id="bulkBook" aria-label="选择其他单词本"></select>
+            </label>
+            <button data-bulk-action="attach-book" type="button">复制到其他本</button>
+            <button data-bulk-action="move-book" type="button">移动到其他本</button>
+          </div>
+          <button data-bulk-action="favorite" type="button">收藏</button>
+          <button data-bulk-action="unfavorite" type="button">取消收藏</button>
+          <button data-bulk-action="mark-new" type="button">重置背诵进度</button>
+          <button data-bulk-action="mark-done" type="button">标记掌握</button>
+          <button data-bulk-action="delete" type="button">删除</button>
+        </div>
+        <div class="manager-grid">
+          <div class="word-browser">
+            <div class="word-browser-controls">
+              <input id="wordSearch" type="search" placeholder="搜索单词、释义或音标" autocomplete="off" />
+              <select id="wordLetterSelect" aria-label="按首字母定位单词"></select>
+            </div>
+            <div class="word-list" id="wordList" aria-label="单词列表"></div>
+            <div class="word-pagination" aria-live="polite">
+              <span id="wordPageStatus"></span>
+            </div>
+          </div>
+          <form id="wordForm" class="word-form">
+            <input id="editingId" type="hidden" />
+            <label>单词<input id="editWord" required autocomplete="off" /></label>
+            <label>音标<input id="editPhonetic" autocomplete="off" /></label>
+            <label>释义<textarea id="editMeaning" rows="3"></textarea></label>
+            <label>例句<textarea id="editSentence" rows="3"></textarea></label>
+            <p id="formNotice" role="status"></p>
+            <div class="form-actions">
+              <button id="setCurrent" type="button">设为横条当前词</button>
+              <button id="deleteWord" type="button">删除</button>
+              <button id="saveWord" type="submit">保存</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

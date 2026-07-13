@@ -1,0 +1,43 @@
+{
+  "name": "moyvword",
+  "version": "0.1.0",
+  "description": "A stealthy vocabulary trainer with a tiny work-friendly strip window.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "pack": "electron-builder --dir -c.win.signAndEditExecutable=false",
+    "dist": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "sql.js": "^1.12.0",
+    "ts-fsrs": "^5.4.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "local.moyu.vocabstrip",
+    "productName": "摸鱼单词v47版本",
+    "artifactName": "摸鱼单词v47版本.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "node_modules/sql.js/dist/sql-wasm.wasm",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        "portable"
+      ]
+    }
+  }
+}
