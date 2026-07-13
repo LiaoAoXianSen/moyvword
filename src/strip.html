@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://dict.youdao.com https://*.youdao.com; media-src 'self' https://dict.youdao.com https://*.youdao.com; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>摸鱼单词v47版本</title>
+    <title>摸鱼单词v49版本</title>
     <link rel="icon" href="../assets/icon.svg" />
     <link rel="stylesheet" href="./strip.css" />
   </head>
@@ -16,19 +16,13 @@
           <span id="phonetic"></span>
         </button>
         <div class="quick-meaning" id="quickMeaning">Alt+F 看答案</div>
-        <nav class="quick-actions">
-          <button id="toggleDetailsIcon" type="button" title="展开详情">详</button>
-          <button id="toggleCompactMode" type="button" aria-pressed="false" title="切换专注显示">简</button>
-          <button data-action="speak" type="button" title="发音 Alt+S">音</button>
-          <button data-action="reveal" title="看答案">答</button>
-          <button data-action="boss" title="隐藏横条">藏</button>
-        </nav>
       </div>
       <section class="details" id="details">
         <div class="meta"><span id="mode">复习优先</span><span id="due">下次 现在</span></div>
         <div id="meaning">Alt+F 看答案</div>
         <div id="sentence"></div>
         <nav class="rating-actions" aria-label="单词评分">
+          <button data-action="previous" title="Alt+A 上一词">上一词 A</button>
           <button data-action="rate-again" title="Alt+Z 不认识">不会 Z</button>
           <button data-action="rate-hard" title="Alt+X 模糊">模糊 X</button>
           <button data-action="rate-good" title="Alt+C 认识">认识 C</button>

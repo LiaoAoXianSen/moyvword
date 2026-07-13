@@ -41,7 +41,7 @@ body {
 
 .compact-row {
   display: grid;
-  grid-template-columns: minmax(132px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(132px, auto) minmax(0, 1fr);
   align-items: center;
   height: 28px;
 }
@@ -105,18 +105,11 @@ body.is-compact #word {
   -webkit-app-region: drag;
 }
 
-.quick-actions,
 .rating-actions {
   display: flex;
   align-items: center;
   gap: 3px;
   padding: 3px;
-}
-
-.quick-actions {
-  height: 28px;
-  border-left: 1px solid var(--line);
-  background: color-mix(in oklch, var(--surface) 80%, white);
 }
 
 .details {
@@ -235,7 +228,7 @@ button[data-action="rate-easy"] {
 }
 
 .compact-row {
-  grid-template-columns: minmax(126px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(126px, auto) minmax(0, 1fr);
   height: 28px;
 }
 
@@ -261,15 +254,9 @@ button[data-action="rate-easy"] {
   line-height: 28px;
 }
 
-.quick-actions,
 .rating-actions {
   gap: 2px;
   padding: 3px;
-}
-
-.quick-actions {
-  height: 28px;
-  background: oklch(0.965 0.012 220 / 0.72);
 }
 
 button {

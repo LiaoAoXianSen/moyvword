@@ -10,6 +10,7 @@ function el(id) {
 function setCompactMode(enabled) {
   document.body.classList.toggle('is-compact', enabled);
   const button = el('toggleCompactMode');
+  if (!button) return;
   button.textContent = enabled ? '全' : '简';
   button.setAttribute('aria-pressed', String(enabled));
   button.title = enabled ? '切换完整显示' : '切换专注显示';
@@ -111,21 +112,6 @@ el('dragRegion').addEventListener('contextmenu', (event) => {
 
 el('toggleDetails').addEventListener('click', (event) => {
   event.preventDefault();
-});
-el('toggleDetailsIcon').addEventListener('click', (event) => {
-  event.preventDefault();
-});
-
-el('toggleCompactMode').addEventListener('click', async (event) => {
-  event.preventDefault();
-  event.stopPropagation();
-  const enabled = !document.body.classList.contains('is-compact');
-  setCompactMode(enabled);
-  try {
-    render(await window.moyu.updateSettings({ stripCompactMode: enabled }));
-  } catch (_error) {
-    setCompactMode(!enabled);
-  }
 });
 
 window.moyu.onState(render);
