@@ -886,9 +886,7 @@ async function refreshAfterPlanChange(message) {
 async function previewRandomNew(count) {
   const list = await window.moyu.sampleNewWords(count, byId('wordSearch').value);
   renderRandomPreview(list);
-  if (!list.length) byId('continueSummary').textContent = totalPlanCapacityLeft(state && state.stats && state.stats.dailyPlan) <= 0
-    ? '今日目标名额已用完。'
-    : '当前单词本没有可随机加入的新词。';
+  if (!list.length) byId('continueSummary').textContent = '当前单词本没有可随机加入的新词。';
 }
 
 function selectedBulkIds() {
@@ -1004,7 +1002,7 @@ byId('lookupResults').addEventListener('click', async (event) => {
     await refreshWords(false);
     renderLookupResults({ source: 'book', items: [result.word], total: 1 });
     byId('lookupNotice').textContent = addToPlan
-      ? (result.added ? '已加入当前词本和今日记忆。' : '已加入当前词本；今日计划名额已满。')
+      ? (result.added ? '已加入当前词本和今日记忆。' : '已在当前词本中，未重复加入今日记忆。')
       : '已加入当前词本。';
   } catch (error) {
     byId('lookupNotice').textContent = error.message || '添加失败。';
@@ -1026,18 +1024,9 @@ byId('continueReviewAdd').addEventListener('click', async () => {
   }
 });
 byId('previewRandomNew').addEventListener('click', async () => {
-  if (totalPlanCapacityLeft(state && state.stats && state.stats.dailyPlan) <= 0) {
-    byId('continueSummary').textContent = '今日目标名额已用完。';
-    renderRandomPreview([]);
-    return;
-  }
   await previewRandomNew(Math.max(1, Number(byId('randomNewCount').value) || 10));
 });
 byId('openManualNewPicker').addEventListener('click', async () => {
-  if (totalPlanCapacityLeft(state && state.stats && state.stats.dailyPlan) <= 0) {
-    byId('continueSummary').textContent = '今日目标名额已用完。';
-    return;
-  }
   showManualNewPicker(true);
   byId('continueSummary').textContent = '从当前单词本勾选想背的新词。';
   await loadManualNewWords();
@@ -1063,10 +1052,6 @@ byId('manualNewList').addEventListener('scroll', (event) => {
 byId('confirmManualNew').addEventListener('click', async () => {
   const ids = [...manualNewSelected];
   if (!ids.length) return;
-  if (totalPlanCapacityLeft(state && state.stats && state.stats.dailyPlan) <= 0) {
-    byId('continueSummary').textContent = '今日目标名额已用完。';
-    return;
-  }
   try {
     const result = await window.moyu.addNewWordsToPlan(ids);
     byId('continueDialog').close();
@@ -1079,11 +1064,6 @@ byId('confirmManualNew').addEventListener('click', async () => {
 byId('confirmRandomNew').addEventListener('click', async () => {
   const ids = selectedRandomPreviewIds();
   if (!ids.length) return;
-  if (totalPlanCapacityLeft(state && state.stats && state.stats.dailyPlan) <= 0) {
-    byId('continueSummary').textContent = '今日目标名额已用完。';
-    renderRandomPreview([]);
-    return;
-  }
   try {
     const result = await window.moyu.addNewWordsToPlan(ids);
     byId('continueDialog').close();
@@ -1411,10 +1391,6 @@ byId('addSelectedToPlan').addEventListener('click', async () => {
     showNotice('所选单词不需要加入今日计划。');
     return;
   }
-  if (totalPlanCapacityLeft(state && state.stats && state.stats.dailyPlan) <= 0) {
-    showNotice('今日目标名额已用完。');
-    return;
-  }
   try {
     let added = 0;
     if (reviewIds.length) added += (await window.moyu.addReviewWordsToPlan(reviewIds)).added || 0;
@@ -1425,10 +1401,6 @@ byId('addSelectedToPlan').addEventListener('click', async () => {
   }
 });
 byId('managerRandomNew').addEventListener('click', async () => {
-  if (totalPlanCapacityLeft(state && state.stats && state.stats.dailyPlan) <= 0) {
-    showNotice('今日目标名额已用完。');
-    return;
-  }
   configureContinueDialog(state.stats.dailyPlan, 'new');
   byId('continueDialog').showModal();
   await previewRandomNew(Math.max(1, Number(byId('managerRandomCount').value) || 10));

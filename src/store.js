@@ -746,13 +746,31 @@ function dayKeyFromTime(time) {
     data.session.planDate = today;
     data.session.planCompletionToken = '';
 
-    // Due reviews are all included first; the daily target only limits how many new words fill the remaining capacity.
+    // Due reviews are included first. Automatic new words are filled lazily after reviews,
+    // so manual additions during review can consume the new-word room without replacing words.
     dueReviewPool().forEach((word) => {
       data.session.planItems.push(makePlanItem(word, 'review', 'initial_due'));
     });
+    resetLearningWindow();
+    save();
+    return true;
+  }
+
+  function automaticNewPlanExists() {
+    return data.session.planItems.some((item) => item.addedDate === todayKey()
+      && item.type === 'new'
+      && item.source === 'automatic_new');
+  }
+
+  function fillAutomaticNewPlan() {
+    ensureDailyPlan();
+    if (automaticNewPlanExists()) return false;
+    if (activePlanItems().some((item) => item.type === 'review')) return false;
     const target = Math.max(0, Number(data.settings.dailyNew) || 0);
-    const dueCount = activePlanItems().filter((item) => item.type === 'review').length;
-    const roomForNew = Math.max(0, target - dueCount);
+    const reviewCount = completedPlanItemsToday('review').length + activePlanItems().filter((item) => item.type === 'review').length;
+    const manualNewCount = completedPlanItemsToday('new').filter((item) => item.source !== 'automatic_new').length
+      + activePlanItems().filter((item) => item.type === 'new' && item.source !== 'automatic_new').length;
+    const roomForNew = Math.max(0, target - reviewCount - manualNewCount);
     const yesterday = dayKeyFromTime(startOfToday() - DAY);
     const yesterdayEntries = data.studyLog.filter((entry) => entry.date === yesterday);
     const yesterdayActions = yesterdayEntries.reduce((sum, entry) => sum + (entry.actions || 0), 0);
@@ -760,14 +778,16 @@ function dayKeyFromTime(time) {
     const newQuota = yesterdayActions && yesterdayUncertain / yesterdayActions >= 0.35
       ? Math.floor(roomForNew * 0.5)
       : roomForNew;
+    if (newQuota <= 0) return false;
     const plannedIds = new Set(activePlanItems().map((item) => item.wordId));
-    data.words
+    const candidates = data.words
       .filter((word) => word.status === 'new' && wordInBook(word, data.settings.activeBookId) && !plannedIds.has(word.id))
       .sort((a, b) => a.word.localeCompare(b.word, 'en'))
-      .slice(0, newQuota)
-      .forEach((word) => {
+      .slice(0, newQuota);
+    if (!candidates.length) return false;
+    candidates.forEach((word) => {
       data.session.planItems.push(makePlanItem(word, 'new', 'automatic_new'));
-      });
+    });
     resetLearningWindow();
     save();
     return true;
@@ -828,26 +848,9 @@ function dayKeyFromTime(time) {
     ensureDailyPlan();
     const ids = new Set((Array.isArray(wordIds) ? wordIds : []).map(String));
     const existing = activePlanWordIds();
+    const manualAdd = source !== 'automatic_new';
+    const capacity = manualAdd ? Number.POSITIVE_INFINITY : remainingPlanCapacity();
     let added = 0;
-    if (type === 'new' && source !== 'automatic_new') {
-      activePlanItems()
-        .filter((item) => ids.has(item.wordId) && item.type === 'new' && item.source === 'automatic_new')
-        .forEach((item) => {
-          item.source = source;
-          added += 1;
-        });
-    }
-    let capacity = remainingPlanCapacity();
-    if (capacity <= 0 && type === 'new' && source !== 'automatic_new') {
-      const requested = [...ids].filter((id) => !existing.has(id)).length;
-      if (requested > 0) {
-        const automaticItems = activePlanItems()
-          .filter((item) => item.type === 'new' && item.source === 'automatic_new')
-          .slice(-requested);
-        automaticItems.forEach((item) => { item.status = 'cancelled'; });
-        if (automaticItems.length) capacity = remainingPlanCapacity();
-      }
-    }
     if (capacity <= 0) return { added, plan: planSnapshot() };
     data.words.forEach((word) => {
       if (added >= capacity) return;
@@ -876,7 +879,7 @@ function dayKeyFromTime(time) {
 
   function sampleNewWords(count, query = '') {
     ensureDailyPlan();
-    const amount = Math.min(remainingPlanCapacity(), Math.max(0, Math.floor(Number(count) || 0)));
+    const amount = Math.max(0, Math.floor(Number(count) || 0));
     if (amount <= 0) return [];
     const pool = availableNewWords(query);
     for (let index = pool.length - 1; index > 0; index -= 1) {
@@ -888,6 +891,7 @@ function dayKeyFromTime(time) {
 
   function planSnapshot() {
     ensureDailyPlan();
+    fillAutomaticNewPlan();
     const items = activePlanItems();
     const activeNew = items.filter((item) => item.type === 'new');
     const activeReview = items.filter((item) => item.type === 'review');
@@ -1063,6 +1067,7 @@ function dayKeyFromTime(time) {
   function learningWindow() {
     refreshDailySession();
     ensureDailyPlan();
+    fillAutomaticNewPlan();
     if (data.session.windowDate !== todayKey()) resetLearningWindow();
 
     const validIds = activePlanWordIds();
