@@ -35,7 +35,7 @@ function normalizeStripAppearance(value, fallback = defaultStripAppearance()) {
   const base = defaultStripAppearance();
   const defaultValue = { ...base, ...(fallback || {}) };
   const input = value && typeof value === 'object' ? value : {};
-  const width = Math.max(360, Math.min(900, Math.round(Number(input.width ?? defaultValue.width) || defaultValue.width)));
+  const width = Math.max(300, Math.min(900, Math.round(Number(input.width ?? defaultValue.width) || defaultValue.width)));
   const opacity = Math.max(40, Math.min(100, Math.round(Number(input.opacity ?? defaultValue.opacity) || defaultValue.opacity)));
   const textColor = normalizeHexColor(input.textColor ?? defaultValue.textColor, defaultValue.textColor);
   return { width, opacity, textColor };

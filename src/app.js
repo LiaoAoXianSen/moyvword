@@ -14,7 +14,7 @@ const DEFAULT_STRIP_APPEARANCE = {
 
 function normalizedStripAppearance(settings = {}) {
   const appearance = settings.stripAppearance || {};
-  const width = Math.max(360, Math.min(900, Math.round(Number(appearance.width) || DEFAULT_STRIP_APPEARANCE.width)));
+  const width = Math.max(300, Math.min(900, Math.round(Number(appearance.width) || DEFAULT_STRIP_APPEARANCE.width)));
   const opacity = Math.max(40, Math.min(100, Math.round(Number(appearance.opacity) || DEFAULT_STRIP_APPEARANCE.opacity)));
   const textColor = /^#[0-9a-fA-F]{6}$/.test(String(appearance.textColor || ''))
     ? String(appearance.textColor).toLowerCase()
@@ -30,6 +30,13 @@ function stripAppearancePatch() {
   };
 }
 
+function scheduleStripAppearanceSave(delay = 120) {
+  clearTimeout(stripAppearanceSaveTimer);
+  stripAppearanceSaveTimer = setTimeout(() => {
+    window.moyu.updateSettings({ stripAppearance: stripAppearancePatch() });
+  }, delay);
+}
+
 let activeDownloadId = null;
 let randomPreview = [];
 let manualNewWords = [];
@@ -40,6 +47,7 @@ let manualNewLoading = false;
 let manualNewSeq = 0;
 let manualNewQueued = false;
 let wordRefreshSeq = 0;
+let stripAppearanceSaveTimer;
 let wordPage = 1;
 let wordPages = 1;
 let wordTotal = 0;
@@ -1136,15 +1144,17 @@ byId('audioVolume').addEventListener('change', (event) => {
 });
 byId('stripWidth').addEventListener('input', (event) => {
   byId('stripWidthValue').value = `${event.target.value}px`;
+  scheduleStripAppearanceSave();
 });
 byId('stripWidth').addEventListener('change', () => {
-  window.moyu.updateSettings({ stripAppearance: stripAppearancePatch() });
+  scheduleStripAppearanceSave(0);
 });
 byId('stripOpacity').addEventListener('input', (event) => {
   byId('stripOpacityValue').value = `${event.target.value}%`;
+  scheduleStripAppearanceSave();
 });
 byId('stripOpacity').addEventListener('change', () => {
-  window.moyu.updateSettings({ stripAppearance: stripAppearancePatch() });
+  scheduleStripAppearanceSave(0);
 });
 byId('stripTextColor').addEventListener('change', () => {
   window.moyu.updateSettings({ stripAppearance: stripAppearancePatch() });
