@@ -1043,6 +1043,30 @@ function dayKeyFromTime(time) {
     });
   }
 
+  // If every remaining plan word is stuck in a day-loop "cards before" wait and nothing else
+  // can be studied, the counters never decrement. Release that artificial gap so short loops
+  // can continue instead of showing an empty "没有单词" screen.
+  function releaseStalledDayLoops() {
+    const t = now();
+    const plannedWords = activePlanItems()
+      .map((item) => findWord(item.wordId))
+      .filter((word) => word && word.status !== 'done');
+    if (!plannedWords.length) return false;
+    const hasImmediateWork = plannedWords.some((word) => {
+      if (word.status === 'new') return true;
+      return isReadyForStudy(word, t);
+    });
+    if (hasImmediateWork) return false;
+    const stalled = plannedWords.filter((word) => hasActiveDayLoop(word) && (word.dayLoopCardsBefore || 0) > 0);
+    if (!stalled.length) return false;
+    const stalledIds = new Set(stalled.map((word) => word.id));
+    data.words = data.words.map((word) => {
+      if (!stalledIds.has(word.id)) return word;
+      return { ...word, dayLoopCardsBefore: 0 };
+    });
+    return true;
+  }
+
   function canLearnNew() {
     refreshDailySession();
     return activeBookProgress().newLearned < data.settings.dailyNew;
@@ -1089,6 +1113,7 @@ function dayKeyFromTime(time) {
   function fillLearningWindow() {
     const t = now();
     learningWindow();
+    releaseStalledDayLoops();
     const size = data.settings.learningWindowSize;
     const byId = new Map(data.words.map((word) => [word.id, word]));
     const itemByWordId = new Map(activePlanItems().map((item) => [item.wordId, item]));
@@ -1101,11 +1126,14 @@ function dayKeyFromTime(time) {
     const newWords = plannedWords
       .filter((word) => word.status === 'new')
       .sort((a, b) => (itemByWordId.get(a.id).addedAt || 0) - (itemByWordId.get(b.id).addedAt || 0));
+    const waitingLoops = plannedWords
+      .filter((word) => word.status !== 'new' && hasActiveDayLoop(word) && !isReadyForStudy(word, t))
+      .sort((a, b) => (a.dayLoopDue || 0) - (b.dayLoopDue || 0));
     const waitingReviews = plannedWords
       .filter((word) => word.status !== 'new' && !hasActiveDayLoop(word) && !isReadyForStudy(word, t))
       .sort((a, b) => (a.due || 0) - (b.due || 0));
     const ids = [];
-    [readyReviews, newWords, waitingReviews].forEach((group) => {
+    [readyReviews, newWords, waitingLoops, waitingReviews].forEach((group) => {
       group.forEach((word) => {
         if (ids.length < size && !ids.includes(word.id)) ids.push(word.id);
       });
@@ -1136,6 +1164,11 @@ function dayKeyFromTime(time) {
 
     const fresh = windowWords.find((w) => w.status === 'new');
     if (fresh) return fresh;
+
+    const waitingLoop = windowWords
+      .filter((w) => hasActiveDayLoop(w))
+      .sort((a, b) => (a.dayLoopDue || 0) - (b.dayLoopDue || 0));
+    if (waitingLoop[0]) return waitingLoop[0];
 
     const upcoming = windowWords
       .filter((w) => w.status !== 'new')
@@ -1205,7 +1238,7 @@ function dayKeyFromTime(time) {
       ? '今日回顾'
       : word.status === 'new'
       ? '新词'
-      : word.status === 'learning'
+      : hasActiveDayLoop(word) || word.status === 'learning'
           ? '短循环'
           : stubbornness(word) > 0
             ? '错词复习'
@@ -1214,7 +1247,7 @@ function dayKeyFromTime(time) {
     const overdue = overdueWeight(word);
     return {
       ...word,
-      dueLabel: dueText(word.due),
+      dueLabel: dueText(hasActiveDayLoop(word) ? word.dayLoopDue : word.due),
       queueLabel,
       stageLabel: stageText(word.memoryStage),
       retention,

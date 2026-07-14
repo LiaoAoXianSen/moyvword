@@ -439,9 +439,17 @@ function render(nextState) {
   if (!word) {
     byId('currentWord').textContent = '没有单词';
     const review = stats.todayReview || {};
+    const plan = stats.dailyPlan || {};
+    const remainingPlan = Math.max(0, Number(plan.newWords && plan.newWords.remaining) || 0)
+      + Math.max(0, Number(plan.reviews && plan.reviews.remaining) || 0);
+    const waitingLoops = Math.max(0, Number(plan.shortLoops && plan.shortLoops.active) || 0);
     byId('currentMeta').textContent = review.active
       ? `今日回顾进行中 · 剩余 ${review.remainingCards || 0} 张`
-      : stats.dailyPlan && stats.dailyPlan.complete
+      : remainingPlan
+        ? (waitingLoops
+          ? `还有 ${remainingPlan} 个计划词，其中 ${waitingLoops} 个在短循环等待中，稍后再回来。`
+          : `还有 ${remainingPlan} 个计划词待背，稍后再回来或继续加入新词。`)
+      : plan.complete
         ? (review.canStart ? '今日计划已完成，可以开始回顾。' : '今日目标已完成。')
         : '先从当前单词本选择新词，或等待到期复习进入计划。';
     byId('currentAnswer').textContent = '';
