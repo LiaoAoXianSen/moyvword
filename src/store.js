@@ -11,6 +11,20 @@ const {
   stubbornness
 } = require('./scheduler');
 const { createPersistence } = require('./persistence');
+const {
+  advanceLive,
+  defaultNavigation,
+  enterManual,
+  goNext,
+  goPrevious,
+  isBrowsing,
+  migrateNavigation,
+  removeWord,
+  removeWords,
+  returnToLive,
+  setLive,
+  viewWordId
+} = require('./navigation');
 
 const seedWords = [
   { word: 'ability', phonetic: "/ə'bɪləti/", meaning: 'n. 能力；才能', sentence: 'The job requires the ability to focus under pressure.' },
@@ -27,7 +41,7 @@ const IN_DAY_HARD_REPEATS = 2;
 
 function defaultData() {
   return {
-    version: 6,
+    version: 7,
     settings: {
       dailyNew: 20,
       learningWindowSize: 15,
@@ -47,6 +61,7 @@ function defaultData() {
     studyLog: [],
     currentId: null,
     history: [],
+    navigation: defaultNavigation(),
     revealed: false,
     session: {
       newLearned: 0,
@@ -97,12 +112,11 @@ function dayKeyFromTime(time) {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-async function createStore(dataPaths) {
+  async function createStore(dataPaths) {
   const persistence = await createPersistence(dataPaths, defaultData());
   const loaded = persistence.loadData();
   let data = normalizeData(loaded);
   if (Number(loaded.version || 0) !== data.version) save();
-
   function normalizeData(raw) {
     const base = defaultData();
     const normalized = {
@@ -117,7 +131,7 @@ async function createStore(dataPaths) {
     if (Number(raw.version || 0) < 5 && raw.settings && raw.settings.autoSpeak === false) {
       normalized.settings.autoSpeak = true;
     }
-    normalized.version = 6;
+    normalized.version = 7;
     if (!normalized.session.date) normalized.session.date = todayKey();
     if (!normalized.session.bookProgress || typeof normalized.session.bookProgress !== 'object') normalized.session.bookProgress = {};
     if (!Array.isArray(normalized.session.windowIds)) normalized.session.windowIds = [];
@@ -137,7 +151,39 @@ async function createStore(dataPaths) {
       normalized.settings.activeBookId = normalized.books[0].id;
     }
     normalized.words = normalized.words.map((word) => normalizeWordBooks(normalizeDailyLoop(word), normalized.settings.activeBookId));
+    normalized.navigation = migrateNavigation(raw.navigation || normalized.navigation, {
+      currentId: raw.currentId || normalized.currentId,
+      history: Array.isArray(raw.history) ? raw.history : normalized.history,
+      manualPreviewId: normalized.session.manualPreviewId,
+      manualReturnId: normalized.session.manualReturnId
+    });
+    syncLegacyNavigationFields(normalized);
     return normalized;
+  }
+
+  function syncLegacyNavigationFields(target = data) {
+    const nav = defaultNavigation(target.navigation);
+    target.navigation = nav;
+    target.currentId = viewWordId(nav);
+    target.history = nav.trail.slice();
+    target.session.manualPreviewId = isBrowsing(nav)
+      ? (nav.mode === 'manual' ? nav.manualWordId : viewWordId(nav)) || ''
+      : '';
+    target.session.manualReturnId = isBrowsing(nav) ? (nav.liveWordId || '') : '';
+  }
+
+  function applyNavigation(nextNav, options = {}) {
+    data.navigation = defaultNavigation(nextNav);
+    syncLegacyNavigationFields(data);
+    if (options.keepReveal) {
+      // preserve current reveal flag
+    } else if (options.forceReveal === true) {
+      data.revealed = true;
+    } else if (options.forceReveal === false) {
+      data.revealed = !!data.settings.answerFirst;
+    } else {
+      data.revealed = !!data.settings.answerFirst;
+    }
   }
 
   function normalizeDailyLoop(word) {
@@ -293,9 +339,12 @@ async function createStore(dataPaths) {
       planDate: data.session.planDate || '',
       planItems: normalizePlanItems(data.session.planItems || []),
       planCompletionToken: '',
+      manualPreviewId: '',
       manualReturnId: '',
       todayReview: defaultTodayReview()
     };
+    // Keep trail across days, but always resume at the study frontier.
+    applyNavigation(returnToLive(data.navigation, data.navigation && data.navigation.liveWordId), { forceReveal: false });
     save();
   }
 
@@ -543,7 +592,6 @@ async function createStore(dataPaths) {
   function moveToTodayReviewNext(nextQueue, reviewPatch = {}) {
     const review = normalizeTodayReview(data.session.todayReview);
     const nextWord = findWord(nextQueue[0] || '');
-    rememberCurrentForPrevious(nextWord ? nextWord.id : null);
     data.session.todayReview = {
       ...review,
       ...reviewPatch,
@@ -552,9 +600,7 @@ async function createStore(dataPaths) {
       startedAt: reviewPatch.startedAt || review.startedAt || now(),
       finishedAt: nextQueue.length ? 0 : (reviewPatch.finishedAt || now())
     };
-    data.currentId = nextWord ? nextWord.id : null;
-    data.session.manualPreviewId = '';
-    data.revealed = !!data.settings.answerFirst;
+    applyNavigation(advanceLive(data.navigation, nextWord ? nextWord.id : null), { forceReveal: false });
     save();
   }
 
@@ -1010,10 +1056,7 @@ async function createStore(dataPaths) {
       });
     });
     data.session.windowIds = ids;
-    if (data.currentId && !ids.includes(data.currentId)) {
-      const current = byId.get(data.currentId);
-      if (!current || (!isStudyWord(current) && !isTodayReviewWord(current))) data.currentId = null;
-    }
+    // Navigation is independent from the learning window. Never clear currentId here.
     return ids.map((id) => byId.get(id)).filter(Boolean);
   }
 
@@ -1046,45 +1089,50 @@ async function createStore(dataPaths) {
   }
 
   function currentWord() {
-    let word = data.words.find((w) => w.id === data.currentId);
-    const isManualPreview = word && data.session.manualPreviewId === word.id;
+    data.navigation = defaultNavigation(data.navigation);
+    const viewedId = viewWordId(data.navigation);
+    let word = viewedId ? data.words.find((w) => w.id === viewedId) : null;
+
+    // Browsing history/manual always shows that word if it still exists.
+    if (isBrowsing(data.navigation)) {
+      if (word) {
+        data.currentId = word.id;
+        return word;
+      }
+      // Stale browse target: drop back to live frontier.
+      applyNavigation(returnToLive(data.navigation), { keepReveal: true });
+    }
+
+    word = data.navigation.liveWordId
+      ? data.words.find((w) => w.id === data.navigation.liveWordId)
+      : null;
     const isTodayReview = isTodayReviewWord(word);
-    if (!word || (!isStudyWord(word) && !isManualPreview && !isTodayReview)) {
+    if (!word || (!isStudyWord(word) && !isTodayReview)) {
       const review = todayReviewState();
       word = review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext();
-      data.currentId = word ? word.id : null;
-      if (review.active) data.session.manualPreviewId = '';
-      data.revealed = !!data.settings.answerFirst;
+      applyNavigation(setLive(data.navigation, word ? word.id : null), { forceReveal: false });
       saveSoon();
+    } else {
+      data.currentId = word.id;
     }
     return word || null;
   }
 
-  function rememberCurrentForPrevious(nextId = null) {
-    if (!data.currentId || data.currentId === nextId) return;
-    if (data.session.manualPreviewId === data.currentId) return;
-    const current = findWord(data.currentId);
-    if (!current) return;
-    if (data.history[data.history.length - 1] !== current.id) data.history.push(current.id);
-    if (data.history.length > 200) data.history = data.history.slice(-200);
-  }
-
-  function manualReturnWord() {
-    const id = String(data.session.manualReturnId || '').trim();
-    if (!id || id === data.currentId) return null;
-    return findWord(id);
-  }
-
   function setCurrent(word, keepReveal = false, manualPreview = false, deferred = false) {
-    const previousId = data.currentId;
-    const previousWasManual = previousId && data.session.manualPreviewId === previousId;
-    rememberCurrentForPrevious(word ? word.id : null);
-    data.currentId = word ? word.id : null;
-    data.session.manualPreviewId = manualPreview && word ? word.id : '';
-    data.session.manualReturnId = manualPreview && word && previousId && previousId !== word.id && !previousWasManual
-      ? previousId
-      : '';
-    data.revealed = keepReveal ? data.revealed : !!data.settings.answerFirst;
+    if (manualPreview && word) {
+      applyNavigation(enterManual(data.navigation, word.id), {
+        keepReveal,
+        forceReveal: keepReveal ? undefined : false
+      });
+    } else {
+      applyNavigation(advanceLive(data.navigation, word ? word.id : null), {
+        keepReveal,
+        forceReveal: keepReveal ? undefined : false
+      });
+    }
+    if (keepReveal) {
+      // leave data.revealed as-is
+    }
     if (deferred) saveSoon();
     else save();
   }
@@ -1223,7 +1271,6 @@ async function createStore(dataPaths) {
           path: persistence.dbPath,
           mirrorPath: persistence.mirrorPath,
           backupDirectory: data.settings.backupDirectory || '',
-          customBackupPath: persistence.getCustomBackupPath()
         },
         shortcuts: [
           ['Alt+A', '上一个'],
@@ -1252,18 +1299,19 @@ async function createStore(dataPaths) {
       if (!['again', 'hard', 'good', 'easy'].includes(grade)) return;
       const word = currentWord();
       if (!word) return;
-      if (data.session.manualPreviewId === word.id) {
+      // Browsing (history/manual) never mutates long-term schedule; just return to live frontier.
+      if (isBrowsing(data.navigation)) {
         const review = todayReviewState();
-        setCurrent(manualReturnWord() || (review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext(word.id)));
+        const live = findWord(data.navigation.liveWordId)
+          || (review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext(word.id));
+        applyNavigation(returnToLive(data.navigation, live ? live.id : null), { forceReveal: false });
+        save();
         return;
       }
       if (isTodayReviewWord(word)) {
         rateTodayReviewWord(word, grade);
         return;
       }
-      // A completed plan item can be removed from the learning window before
-      // the next card is selected, so preserve it while it is still current.
-      rememberCurrentForPrevious();
       const beforeStatus = word.status;
       const longTermRating = word.longTermRatingDate !== todayKey();
       let rated;
@@ -1321,31 +1369,50 @@ async function createStore(dataPaths) {
     },
     skip() {
       const word = currentWord();
-      if (word && data.session.manualPreviewId === word.id) {
+      if (isBrowsing(data.navigation)) {
+        const stepped = goNext(data.navigation);
+        if (!stepped.atLive) {
+          applyNavigation(stepped.nav, { forceReveal: true });
+          saveSoon();
+          return;
+        }
         const review = todayReviewState();
-        setCurrent(manualReturnWord() || (review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext(word.id)), false, false, true);
+        const live = findWord(stepped.nav.liveWordId)
+          || (review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext(word && word.id));
+        applyNavigation(returnToLive(stepped.nav, live ? live.id : null), { forceReveal: false });
+        saveSoon();
         return;
       }
       if (isTodayReviewWord(word)) {
         skipTodayReviewWord(word);
         return;
       }
-      tickSmallLoops(data.currentId);
-      setCurrent(chooseNext(data.currentId), false, false, true);
+      const liveId = data.navigation.liveWordId || (word && word.id) || null;
+      tickSmallLoops(liveId);
+      setCurrent(chooseNext(liveId), false, false, true);
     },
     previous() {
-      let last = data.history.pop();
-      let word = findWord(last);
-      while (last && !word) {
-        last = data.history.pop();
-        word = findWord(last);
+      let nav = defaultNavigation(data.navigation);
+      for (let guard = 0; guard < 64; guard += 1) {
+        const beforeId = viewWordId(nav);
+        const beforeMode = nav.mode;
+        const beforeIndex = nav.index;
+        const candidate = goPrevious(nav);
+        const candidateId = viewWordId(candidate);
+        if (
+          !candidateId
+          || (candidateId === beforeId && candidate.mode === beforeMode && candidate.index === beforeIndex)
+        ) {
+          return;
+        }
+        if (findWord(candidateId)) {
+          applyNavigation(candidate, { forceReveal: true });
+          save();
+          return;
+        }
+        // Skip deleted/missing trail entries without getting stuck.
+        nav = removeWord(candidate, candidateId);
       }
-      if (!word) return;
-      data.session.manualReturnId = data.session.manualReturnId || data.currentId || '';
-      data.currentId = word.id;
-      data.session.manualPreviewId = word.id;
-      data.revealed = true;
-      save();
     },
     toggleFavorite() {
       const word = currentWord();
@@ -1510,11 +1577,7 @@ async function createStore(dataPaths) {
       if (!word) throw new Error('没有找到这个单词');
       data.words = data.words.filter((item) => item.id !== id);
       cancelActivePlanItems(id);
-      data.history = data.history.filter((item) => item !== id);
-      if (data.session.manualReturnId === id) data.session.manualReturnId = '';
-      if (data.currentId === id) {
-        data.currentId = null;
-      }
+      applyNavigation(removeWord(data.navigation, id), { keepReveal: true });
       pruneEmptyBooks({ keepActiveEmpty: true });
       save();
     },
@@ -1532,11 +1595,7 @@ async function createStore(dataPaths) {
         data.words = data.words.filter((word) => !idSet.has(word.id));
         affected = before - data.words.length;
         cancelActivePlanItems([...idSet]);
-        data.history = data.history.filter((id) => !idSet.has(id));
-        if (idSet.has(data.session.manualReturnId)) data.session.manualReturnId = '';
-        if (data.currentId && idSet.has(data.currentId)) {
-          data.currentId = null;
-        }
+        applyNavigation(removeWords(data.navigation, [...idSet]), { keepReveal: true });
         pruneEmptyBooks({ keepActiveEmpty: true });
         save();
         return { affected };
@@ -1587,8 +1646,16 @@ async function createStore(dataPaths) {
         return word;
       });
       if (action === 'move-book') pruneEmptyBooks({ keepActiveEmpty: false });
-      if (data.currentId && (!findWord(data.currentId) || !isStudyWord(findWord(data.currentId)) || (action === 'mark-done' && idSet.has(data.currentId)))) {
-        data.currentId = null;
+      if (action === 'mark-done') {
+        const liveId = data.navigation.liveWordId;
+        if (liveId && idSet.has(liveId)) {
+          applyNavigation(setLive(data.navigation, null), { keepReveal: true });
+        }
+      } else {
+        const viewed = viewWordId(data.navigation);
+        if (viewed && !findWord(viewed)) {
+          applyNavigation(returnToLive(data.navigation), { keepReveal: true });
+        }
       }
       save();
       return { affected };
