@@ -41,3 +41,8 @@
 - v46 修正 portable EXE 临时解包路径导致主数据读到 Temp 的问题：当 EXE 位于 `dist` 或 `release` 时，默认读取项目根目录 `data\moyu-vocab.sqlite`；C 盘恢复为旧版 `moyu-vocab-strip` 兜底镜像路径。
 - 启动“今日回顾”功能：用户确认回顾必须在今日计划完成后开启，且回顾中不认识/模糊只增加本次回顾出现次数，不影响任何正式学习进度。
 - 今日回顾功能完成：新增 `session.todayReview` 队列、`today-review:start` IPC、首页“复习今日已学”入口；临时 SQLite 场景验证“不认识”只追加 3 张回顾卡且不改长期/短循环字段，Node 语法检查和 `npm run dist` 均通过。
+
+## 2026-07-14
+- 已修复手动查看上一词后的返回路径：`src/store.js` 用 `session.manualReturnId` 保存原当前词；“下一个”及评分会优先返回该词，删除词时清理失效 ID。
+- 验证通过：`node --check src/store.js`，临时数据场景覆盖“上一词 → 下一个”和“上一词 → 认识”。
+- 已升级至 v53 / 0.1.5；`npm run dist` 成功生成 `dist/摸鱼单词v53版本.exe`，并已同步到 `release/摸鱼单词v53版本.exe`。

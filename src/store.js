@@ -62,6 +62,7 @@ function defaultData() {
       planItems: [],
       planCompletionToken: '',
       manualPreviewId: '',
+      manualReturnId: '',
       todayReview: {
         date: todayKey(),
         queue: [],
@@ -127,6 +128,7 @@ async function createStore(dataPaths) {
     if (!normalized.session.planDate) normalized.session.planDate = '';
     if (!normalized.session.planCompletionToken) normalized.session.planCompletionToken = '';
     if (!normalized.session.manualPreviewId) normalized.session.manualPreviewId = '';
+    if (!normalized.session.manualReturnId) normalized.session.manualReturnId = '';
     normalized.session.todayReview = normalizeTodayReview(normalized.session.todayReview);
     normalized.settings.learningWindowSize = Math.max(1, Math.min(50, Number(normalized.settings.learningWindowSize) || 15));
     normalized.settings.audioVolume = Math.max(0, Math.min(100, Math.round(Number(normalized.settings.audioVolume) || 0)));
@@ -291,6 +293,7 @@ async function createStore(dataPaths) {
       planDate: data.session.planDate || '',
       planItems: normalizePlanItems(data.session.planItems || []),
       planCompletionToken: '',
+      manualReturnId: '',
       todayReview: defaultTodayReview()
     };
     save();
@@ -1066,10 +1069,21 @@ async function createStore(dataPaths) {
     if (data.history.length > 200) data.history = data.history.slice(-200);
   }
 
+  function manualReturnWord() {
+    const id = String(data.session.manualReturnId || '').trim();
+    if (!id || id === data.currentId) return null;
+    return findWord(id);
+  }
+
   function setCurrent(word, keepReveal = false, manualPreview = false, deferred = false) {
+    const previousId = data.currentId;
+    const previousWasManual = previousId && data.session.manualPreviewId === previousId;
     rememberCurrentForPrevious(word ? word.id : null);
     data.currentId = word ? word.id : null;
     data.session.manualPreviewId = manualPreview && word ? word.id : '';
+    data.session.manualReturnId = manualPreview && word && previousId && previousId !== word.id && !previousWasManual
+      ? previousId
+      : '';
     data.revealed = keepReveal ? data.revealed : !!data.settings.answerFirst;
     if (deferred) saveSoon();
     else save();
@@ -1240,7 +1254,7 @@ async function createStore(dataPaths) {
       if (!word) return;
       if (data.session.manualPreviewId === word.id) {
         const review = todayReviewState();
-        setCurrent(review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext(word.id));
+        setCurrent(manualReturnWord() || (review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext(word.id)));
         return;
       }
       if (isTodayReviewWord(word)) {
@@ -1309,7 +1323,7 @@ async function createStore(dataPaths) {
       const word = currentWord();
       if (word && data.session.manualPreviewId === word.id) {
         const review = todayReviewState();
-        setCurrent(review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext(word.id), false, false, true);
+        setCurrent(manualReturnWord() || (review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext(word.id)), false, false, true);
         return;
       }
       if (isTodayReviewWord(word)) {
@@ -1327,6 +1341,7 @@ async function createStore(dataPaths) {
         word = findWord(last);
       }
       if (!word) return;
+      data.session.manualReturnId = data.session.manualReturnId || data.currentId || '';
       data.currentId = word.id;
       data.session.manualPreviewId = word.id;
       data.revealed = true;
@@ -1496,6 +1511,7 @@ async function createStore(dataPaths) {
       data.words = data.words.filter((item) => item.id !== id);
       cancelActivePlanItems(id);
       data.history = data.history.filter((item) => item !== id);
+      if (data.session.manualReturnId === id) data.session.manualReturnId = '';
       if (data.currentId === id) {
         data.currentId = null;
       }
@@ -1517,6 +1533,7 @@ async function createStore(dataPaths) {
         affected = before - data.words.length;
         cancelActivePlanItems([...idSet]);
         data.history = data.history.filter((id) => !idSet.has(id));
+        if (idSet.has(data.session.manualReturnId)) data.session.manualReturnId = '';
         if (data.currentId && idSet.has(data.currentId)) {
           data.currentId = null;
         }

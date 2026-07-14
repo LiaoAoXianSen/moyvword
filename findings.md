@@ -10,3 +10,4 @@
 - 2026-07-13：`Alt+W` 已绑定 `lookup`，目前只会打开主窗口并把当前横条单词填进词库搜索框；需要扩展为独立搜词工作流。
 - 已验证 `https://api.dictionaryapi.dev/api/v2/entries/en/ability` 可返回 200 JSON，含音标、英文释义、例句和 MP3 链接；可作为当前词本无结果时的在线查询来源。
 - 2026-07-13 今日回顾口径：入口只在今日计划完成且存在今日完成计划词时可用；回顾队列来自 `completedPlanItemsToday()`，评分只改 `session.todayReview` 队列，不改 FSRS、日内短循环、今日计划或学习统计。
+- 2026-07-14 手动回顾返回规则：`session.manualReturnId` 保存进入“上一词/手动回顾”前的当前词；手动回顾的下一步和评分优先返回它，避免普通选词逻辑跳过原词。
