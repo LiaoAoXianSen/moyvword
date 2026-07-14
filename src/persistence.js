@@ -67,7 +67,8 @@ async function createPersistence(paths, fallbackData) {
     const ui = readJsonValue(db, 'ui', {
       currentId: fallbackData.currentId,
       history: fallbackData.history,
-      revealed: fallbackData.revealed
+      revealed: fallbackData.revealed,
+      navigation: fallbackData.navigation || null
     });
     const words = loadWords(db);
 
@@ -80,6 +81,7 @@ async function createPersistence(paths, fallbackData) {
       words,
       currentId: ui.currentId || null,
       history: Array.isArray(ui.history) ? ui.history : [],
+      navigation: ui.navigation || null,
       revealed: !!ui.revealed
     };
   }
@@ -95,6 +97,7 @@ async function createPersistence(paths, fallbackData) {
     writeJsonValue(db, 'ui', {
       currentId: data.currentId || null,
       history: Array.isArray(data.history) ? data.history : [],
+      navigation: data.navigation || null,
       revealed: !!data.revealed
     });
     saveWords(db, data.words || []);
@@ -108,14 +111,227 @@ async function createPersistence(paths, fallbackData) {
     return targetPath;
   }
 
+  const snapshotsDir = path.join(primaryDir, 'snapshots');
+
+  function ensureSnapshotsDir() {
+    fs.mkdirSync(snapshotsDir, { recursive: true });
+    return snapshotsDir;
+  }
+
+  function snapshotMetaPath(filePath) {
+    return `${filePath}.json`;
+  }
+
+  function readSnapshotMeta(filePath) {
+    try {
+      const metaFile = snapshotMetaPath(filePath);
+      if (!fs.existsSync(metaFile)) return null;
+      return JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  function writeSnapshotMeta(filePath, meta) {
+    fs.writeFileSync(snapshotMetaPath(filePath), JSON.stringify(meta, null, 2), 'utf8');
+  }
+
+  function listSnapshots() {
+    if (!fs.existsSync(snapshotsDir)) return [];
+    const files = fs.readdirSync(snapshotsDir)
+      .filter((name) => name.endsWith('.sqlite'))
+      .map((name) => {
+        const filePath = path.join(snapshotsDir, name);
+        const stat = fs.statSync(filePath);
+        const meta = readSnapshotMeta(filePath) || {};
+        return {
+          id: name.replace(/\.sqlite$/i, ''),
+          fileName: name,
+          path: filePath,
+          kind: meta.kind || (name.startsWith('daily-') ? 'daily' : name.startsWith('manual-') ? 'manual' : name.startsWith('pre-restore-') ? 'pre-restore' : 'other'),
+          label: meta.label || '',
+          createdAt: meta.createdAt || stat.mtimeMs,
+          size: stat.size
+        };
+      })
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return files;
+  }
+
+  function snapshotDayKey(item) {
+    const fromId = String((item && item.id) || '').match(/(?:daily|manual|pre-restore|other)-(\d{8})/i);
+    if (fromId) return fromId[1];
+    const date = new Date(Number(item && item.createdAt) || 0);
+    if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return '';
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('');
+  }
+
+  function pruneSnapshots() {
+    const items = listSnapshots();
+    const keep = new Set();
+    const take = (list, limit) => {
+      list.slice(0, limit).forEach((item) => keep.add(item.fileName));
+    };
+    // Daily: keep newest file per calendar day, then only the newest 7 days.
+    const dailyKeep = [];
+    const seenDays = new Set();
+    items.filter((item) => item.kind === 'daily').forEach((item) => {
+      const day = snapshotDayKey(item);
+      if (day && seenDays.has(day)) return;
+      if (day) seenDays.add(day);
+      dailyKeep.push(item);
+    });
+    take(dailyKeep, 7);
+    take(items.filter((item) => item.kind === 'manual'), 8);
+    take(items.filter((item) => item.kind === 'pre-restore'), 5);
+    take(items.filter((item) => item.kind === 'other'), 3);
+    items.forEach((item) => {
+      if (keep.has(item.fileName)) return;
+      try {
+        fs.unlinkSync(item.path);
+        const metaFile = snapshotMetaPath(item.path);
+        if (fs.existsSync(metaFile)) fs.unlinkSync(metaFile);
+      } catch {
+        // Prune is best-effort.
+      }
+    });
+  }
+
+  function createSnapshot(options = {}) {
+    const kind = ['daily', 'manual', 'pre-restore'].includes(options.kind) ? options.kind : 'manual';
+    const label = String(options.label || '').trim();
+    const now = new Date();
+    const dayKey = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0')
+    ].join('');
+    const stamp = [
+      dayKey,
+      'T',
+      String(now.getHours()).padStart(2, '0'),
+      String(now.getMinutes()).padStart(2, '0'),
+      String(now.getSeconds()).padStart(2, '0')
+    ].join('');
+
+    if (kind === 'daily') {
+      const existingDaily = listSnapshots().find((item) => item.kind === 'daily' && snapshotDayKey(item) === dayKey);
+      if (existingDaily && !options.force) {
+        pruneSnapshots();
+        return listSnapshots().find((item) => item.id === existingDaily.id) || existingDaily;
+      }
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      throw new Error('主数据库不存在，无法创建恢复点。');
+    }
+
+    // Make sure disk has latest memory state when caller already saved.
+    ensureSnapshotsDir();
+    const id = `${kind}-${stamp}${label ? `-${sanitizeSnapshotLabel(label)}` : ''}`;
+    const targetPath = path.join(snapshotsDir, `${id}.sqlite`);
+    fs.copyFileSync(dbPath, targetPath);
+    const meta = {
+      id,
+      kind,
+      label,
+      createdAt: Date.now(),
+      source: dbPath
+    };
+    writeSnapshotMeta(targetPath, meta);
+    pruneSnapshots();
+    return {
+      id,
+      fileName: path.basename(targetPath),
+      path: targetPath,
+      kind,
+      label,
+      createdAt: meta.createdAt,
+      size: fs.statSync(targetPath).size
+    };
+  }
+
+  function ensureDailySnapshot() {
+    try {
+      if (!fs.existsSync(dbPath)) return null;
+      return createSnapshot({ kind: 'daily', label: '每日自动恢复点' });
+    } catch {
+      return null;
+    }
+  }
+
+  function findSnapshot(id) {
+    const clean = String(id || '').trim();
+    if (!clean) return null;
+    return listSnapshots().find((item) => item.id === clean || item.fileName === clean || item.fileName === `${clean}.sqlite`) || null;
+  }
+
+  function reloadDatabaseFromDisk() {
+    if (!fs.existsSync(dbPath)) throw new Error('主数据库不存在。');
+    const next = new SQL.Database(fs.readFileSync(dbPath));
+    initSchema(next);
+    try {
+      db.close();
+    } catch {
+      // ignore close failures on sql.js
+    }
+    db = next;
+  }
+
+  function restoreSnapshot(id) {
+    const snapshot = findSnapshot(id);
+    if (!snapshot || !fs.existsSync(snapshot.path)) {
+      throw new Error('没有找到这个恢复点。');
+    }
+    // Safety net: keep current DB before overwriting.
+    if (fs.existsSync(dbPath)) {
+      try {
+        createSnapshot({ kind: 'pre-restore', label: `恢复前自动保存 ${snapshot.id}` });
+      } catch {
+        // still attempt restore if pre-restore fails after copy intent; prefer failing closed:
+      }
+    }
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    // Atomic-ish replace: copy to temp then rename.
+    const restoreTemp = `${dbPath}.restore-tmp`;
+    fs.copyFileSync(snapshot.path, restoreTemp);
+    if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, backupPath);
+    fs.renameSync(restoreTemp, dbPath);
+    reloadDatabaseFromDisk();
+    mirrorDatabase(dbPath, mirrorPath, mirrorBackupPath);
+    mirrorCustomBackup(dbPath, customBackupDirectory);
+    return {
+      restored: snapshot,
+      data: loadData()
+    };
+  }
+
   return {
     dbPath,
     mirrorPath,
+    snapshotsDir,
     getCustomBackupPath: () => customBackupPath(customBackupDirectory),
     loadData,
     saveData,
-    backupTo
+    backupTo,
+    listSnapshots,
+    createSnapshot,
+    ensureDailySnapshot,
+    restoreSnapshot,
+    reloadDatabaseFromDisk
   };
+}
+
+function sanitizeSnapshotLabel(label) {
+  return String(label || '')
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
+    .replace(/\s+/g, '-')
+    .slice(0, 40);
 }
 
 function initSchema(db) {

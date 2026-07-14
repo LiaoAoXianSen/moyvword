@@ -2466,6 +2466,82 @@ dialog.lookup-dialog {
   gap: 8px;
 }
 
+.snapshot-section {
+  display: grid;
+  gap: 10px;
+  align-items: start;
+}
+
+.snapshot-section > div:first-child {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.snapshot-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-soft);
+  background: oklch(0.982 0.008 220);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.snapshot-notice.is-error {
+  border-color: oklch(0.78 0.08 25);
+  color: oklch(0.4 0.1 25);
+  background: oklch(0.97 0.02 25);
+}
+
+.snapshot-list {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.snapshot-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.snapshot-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
+  background: oklch(0.982 0.006 220);
+}
+
+.snapshot-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.snapshot-meta strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.snapshot-meta span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.snapshot-row button {
+  white-space: nowrap;
+}
+
 .settings .shortcut-list {
   gap: 8px;
 }

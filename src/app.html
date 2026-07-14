@@ -206,6 +206,18 @@
             <button id="clearBackupDirectory" type="button">清除</button>
           </div>
         </section>
+        <section class="settings-section snapshot-section" aria-labelledby="snapshotSettingsTitle">
+          <div>
+            <strong id="snapshotSettingsTitle">恢复点</strong>
+            <span>每天最多自动保留 1 份（最近 7 天）；手动最多 8 份。恢复会覆盖当前进度，恢复前会再自动备份。</span>
+            <span id="snapshotsDirPath"></span>
+            <p id="snapshotNotice" class="snapshot-notice" hidden></p>
+            <div class="snapshot-list" id="snapshotList"></div>
+          </div>
+          <div class="storage-actions">
+            <button id="createSnapshot" type="button">创建恢复点</button>
+          </div>
+        </section>
         <label>
           <span>每日目标</span>
           <input id="dailyNew" type="number" min="1" max="200" />

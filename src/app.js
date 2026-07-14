@@ -381,6 +381,7 @@ function render(nextState) {
   byId('storagePath').textContent = state.storage ? `主数据：${state.storage.path}` : '';
   byId('storageMirrorPath').textContent = state.storage && state.storage.mirrorPath ? `C盘兜底：${state.storage.mirrorPath}` : '';
   byId('backupDirectoryPath').textContent = state.storage && state.storage.backupDirectory ? `自定义备份：${state.storage.backupDirectory}` : '自定义备份：未选择';
+  renderSnapshots(state);
 
   const warning = byId('shortcutWarning');
   const failures = settings.shortcutFailures || [];
@@ -1110,6 +1111,49 @@ byId('clearBackupDirectory').addEventListener('click', async () => {
   const nextState = await window.moyu.updateSettings({ backupDirectory: '' });
   render(nextState);
 });
+byId('createSnapshot').addEventListener('click', async () => {
+  const notice = byId('snapshotNotice');
+  notice.hidden = false;
+  notice.classList.remove('is-error');
+  try {
+    const label = prompt('恢复点备注（可留空）', '');
+    if (label === null) {
+      notice.textContent = '已取消。';
+      return;
+    }
+    const snapshot = await window.moyu.createSnapshot({ label: String(label).trim() || '手动恢复点' });
+    const nextState = await window.moyu.getState();
+    render(nextState);
+    notice.textContent = snapshot ? `已创建恢复点：${snapshot.label || snapshot.id}` : '已创建恢复点。';
+  } catch (error) {
+    notice.textContent = error.message || '创建恢复点失败。';
+    notice.classList.add('is-error');
+  }
+});
+byId('snapshotList').addEventListener('click', async (event) => {
+  const button = event.target.closest('button[data-snapshot-action="restore"]');
+  if (!button) return;
+  const notice = byId('snapshotNotice');
+  notice.hidden = false;
+  notice.classList.remove('is-error');
+  try {
+    const result = await window.moyu.restoreSnapshot(button.dataset.snapshotId);
+    if (result && result.canceled) {
+      notice.textContent = '已取消恢复。';
+      return;
+    }
+    const nextState = (result && result.state) || await window.moyu.getState();
+    render(nextState);
+    await refreshWords(false);
+    const restored = result && result.restored;
+    notice.textContent = restored
+      ? `已恢复到：${restored.label || restored.id}`
+      : '已恢复学习数据。';
+  } catch (error) {
+    notice.textContent = error.message || '恢复失败。';
+    notice.classList.add('is-error');
+  }
+});
 byId('openDebt').addEventListener('click', () => switchToManager('debt', 'records'));
 document.querySelectorAll('[data-debt-filter]').forEach((button) => {
   button.addEventListener('click', () => switchToManager(button.dataset.debtFilter, 'records'));
@@ -1157,6 +1201,62 @@ byId('bookProgressList').addEventListener('click', async (event) => {
   if (!row || row.classList.contains('is-active')) return;
   await setCurrentBook(row.dataset.bookId);
 });
+function snapshotKindLabel(kind) {
+  if (kind === 'daily') return '每日';
+  if (kind === 'manual') return '手动';
+  if (kind === 'pre-restore') return '恢复前';
+  return kind || '其他';
+}
+
+function formatSnapshotTime(value) {
+  const date = new Date(Number(value) || 0);
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return '未知时间';
+  return date.toLocaleString();
+}
+
+function formatSnapshotSize(size) {
+  const bytes = Number(size) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderSnapshots(nextState) {
+  const list = byId('snapshotList');
+  const dir = byId('snapshotsDirPath');
+  if (!list || !dir) return;
+  const storage = (nextState && nextState.storage) || {};
+  dir.textContent = storage.snapshotsDir ? `恢复点目录：${storage.snapshotsDir}` : '';
+  const snapshots = Array.isArray(storage.snapshots) ? storage.snapshots : [];
+  if (!snapshots.length) {
+    list.replaceChildren();
+    const empty = document.createElement('p');
+    empty.className = 'snapshot-empty';
+    empty.textContent = '暂无恢复点。打开软件后会按天自动创建，也可手动创建。';
+    list.append(empty);
+    return;
+  }
+  list.replaceChildren(...snapshots.map((item) => {
+    const row = document.createElement('div');
+    row.className = 'snapshot-row';
+    row.dataset.snapshotId = item.id;
+    const meta = document.createElement('div');
+    meta.className = 'snapshot-meta';
+    const title = document.createElement('strong');
+    title.textContent = `${snapshotKindLabel(item.kind)} · ${item.label || item.id}`;
+    const detail = document.createElement('span');
+    detail.textContent = `${formatSnapshotTime(item.createdAt)} · ${formatSnapshotSize(item.size)}`;
+    meta.append(title, detail);
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.dataset.snapshotAction = 'restore';
+    action.dataset.snapshotId = item.id;
+    action.textContent = '恢复';
+    row.append(meta, action);
+    return row;
+  }));
+}
+
 async function createBook() {
   const name = prompt('新单词本名称');
   if (!name) return;

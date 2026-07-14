@@ -578,3 +578,36 @@ ipcMain.handle('backup:save', async () => {
   broadcastState();
   return store.backupTo(result.filePath);
 });
+ipcMain.handle('snapshots:list', () => store.listSnapshots());
+ipcMain.handle('snapshots:create', (_event, options = {}) => {
+  const snapshot = store.createSnapshot({
+    kind: 'manual',
+    label: options && options.label ? options.label : '手动恢复点',
+    force: !!(options && options.force)
+  });
+  broadcastState();
+  return snapshot;
+});
+ipcMain.handle('snapshots:restore', async (_event, id) => {
+  const snapshotId = String(id || '').trim();
+  if (!snapshotId) throw new Error('请选择要恢复的恢复点。');
+  const items = store.listSnapshots();
+  const target = items.find((item) => item.id === snapshotId || item.fileName === snapshotId || item.fileName === `${snapshotId}.sqlite`);
+  const label = target
+    ? `${target.label || target.kind || '恢复点'}（${new Date(target.createdAt).toLocaleString()}）`
+    : snapshotId;
+  const confirm = await dialog.showMessageBox(mainWindow || stripWindow, {
+    type: 'warning',
+    title: '恢复学习数据',
+    message: '确定恢复到这个恢复点吗？',
+    detail: `将用「${label}」覆盖当前学习数据。恢复前会自动再保存一份「恢复前」快照，便于反悔。`,
+    buttons: ['取消', '确认恢复'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true
+  });
+  if (confirm.response !== 1) return { canceled: true };
+  const result = store.restoreSnapshot(snapshotId);
+  broadcastState();
+  return result;
+});

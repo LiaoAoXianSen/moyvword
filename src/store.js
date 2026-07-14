@@ -117,6 +117,13 @@ function dayKeyFromTime(time) {
   const loaded = persistence.loadData();
   let data = normalizeData(loaded);
   if (Number(loaded.version || 0) !== data.version) save();
+  // Point-in-time recovery: keep one automatic snapshot per calendar day.
+  try {
+    persistence.ensureDailySnapshot();
+  } catch {
+    // Snapshot failures must never block app startup.
+  }
+
   function normalizeData(raw) {
     const base = defaultData();
     const normalized = {
@@ -1271,6 +1278,9 @@ function dayKeyFromTime(time) {
           path: persistence.dbPath,
           mirrorPath: persistence.mirrorPath,
           backupDirectory: data.settings.backupDirectory || '',
+          customBackupPath: persistence.getCustomBackupPath(),
+          snapshotsDir: persistence.snapshotsDir,
+          snapshots: persistence.listSnapshots().slice(0, 20)
         },
         shortcuts: [
           ['Alt+A', '上一个'],
@@ -1449,6 +1459,30 @@ function dayKeyFromTime(time) {
     },
     backupTo(targetPath) {
       return persistence.backupTo(targetPath);
+    },
+    listSnapshots() {
+      return persistence.listSnapshots();
+    },
+    createSnapshot(options = {}) {
+      // Flush current memory first so the restore point includes latest study state.
+      save();
+      return persistence.createSnapshot({
+        kind: options.kind || 'manual',
+        label: options.label || '手动恢复点',
+        force: !!options.force
+      });
+    },
+    restoreSnapshot(id) {
+      // Persist current memory first so pre-restore safety snapshot is complete.
+      save();
+      const result = persistence.restoreSnapshot(id);
+      data = normalizeData(result.data || persistence.loadData());
+      // Keep restored bytes as-is unless schema normalization changed versioned fields.
+      if (Number(result.data && result.data.version) !== data.version) save();
+      return {
+        restored: result.restored,
+        state: this.getState()
+      };
     },
     importWords(records) {
       const clean = [];
