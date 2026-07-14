@@ -92,6 +92,25 @@ function toggleDetails() {
   window.moyu.setStripExpanded(expanded);
 }
 
+const localShortcuts = {
+  a: 'previous',
+  s: 'speak',
+  d: 'next',
+  f: 'reveal',
+  z: 'rate-again',
+  x: 'rate-hard',
+  c: 'rate-good',
+  v: 'rate-easy'
+};
+
+window.addEventListener('keydown', (event) => {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return;
+  const action = localShortcuts[String(event.key || '').toLowerCase()];
+  if (!action) return;
+  event.preventDefault();
+  window.moyu.action(action);
+});
+
 document.querySelectorAll('button[data-action]').forEach((button) => {
   button.addEventListener('click', (event) => {
     event.stopPropagation();

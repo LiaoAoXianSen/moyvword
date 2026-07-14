@@ -10,6 +10,8 @@ let mainWindow;
 let tray;
 let store;
 let lastRatingAt = 0;
+let lastActionAt = 0;
+let lastActionName = '';
 let stripPositionSaveTimer;
 let shortcutFailures = [];
 
@@ -169,7 +171,7 @@ function createMainWindow() {
     minHeight: 560,
     show: false,
     icon: createAppIcon(),
-    title: '摸鱼单词v47版本',
+    title: '摸鱼单词v50版本',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -201,8 +203,8 @@ function focusExistingApp() {
   if (stripWindow) stripWindow.showInactive();
   dialog.showMessageBox(mainWindow || stripWindow, {
     type: 'info',
-    title: '摸鱼单词v47版本',
-    message: '摸鱼单词v47版本已经打开',
+    title: '摸鱼单词v50版本',
+    message: '摸鱼单词v50版本已经打开',
     detail: '已为你显示正在运行的窗口。',
     buttons: ['知道了']
   }).catch(() => {});
@@ -285,8 +287,12 @@ function broadcastState() {
 
 function perform(action) {
   try {
+    const now = Date.now();
+    if (action === lastActionName && now - lastActionAt < 80) return;
+    lastActionName = action;
+    lastActionAt = now;
     if (action.startsWith('rate-')) {
-      const t = Date.now();
+      const t = now;
       if (t - lastRatingAt < 90) return;
       lastRatingAt = t;
     }
@@ -350,7 +356,7 @@ function registerShortcuts() {
 
 function createTray() {
   tray = new Tray(createAppIcon());
-  tray.setToolTip('摸鱼单词v47版本');
+  tray.setToolTip('摸鱼单词v50版本');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '显示横条', click: () => stripWindow && stripWindow.showInactive() },
     { label: '隐藏横条', click: () => stripWindow && stripWindow.hide() },
@@ -377,7 +383,7 @@ if (hasSingleInstanceLock) {
     registerShortcuts();
   }).catch((error) => {
     logError('app.whenReady', error);
-    dialog.showErrorBox('摸鱼单词v47版本无法启动', '学习数据无法读取，已保留数据库与备份文件。请从备份恢复后重试。');
+    dialog.showErrorBox('摸鱼单词v50版本无法启动', '学习数据无法读取，已保留数据库与备份文件。请从备份恢复后重试。');
     app.quit();
   });
 }
@@ -557,7 +563,7 @@ ipcMain.handle('import:choose', async () => {
   return { state: store.getState(), imported };
 });
 ipcMain.handle('backup:save', async () => {
-  const defaultName = `摸鱼单词v47版本备份-${new Date().toISOString().slice(0, 10)}.sqlite`;
+  const defaultName = `摸鱼单词v50版本备份-${new Date().toISOString().slice(0, 10)}.sqlite`;
   const backupDirectory = store.getState().settings.backupDirectory || app.getPath('documents');
   const result = await dialog.showSaveDialog(mainWindow || stripWindow, {
     title: '备份学习数据',

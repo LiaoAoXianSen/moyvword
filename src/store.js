@@ -1051,9 +1051,14 @@ async function createStore(dataPaths) {
     },
     previous() {
       let last = data.history.pop();
-      while (last && !isStudyWord(findWord(last))) last = data.history.pop();
-      if (!last) return;
-      data.currentId = last;
+      let word = findWord(last);
+      while (last && !word) {
+        last = data.history.pop();
+        word = findWord(last);
+      }
+      if (!word) return;
+      data.currentId = word.id;
+      data.session.manualPreviewId = word.id;
       data.revealed = true;
       save();
     },

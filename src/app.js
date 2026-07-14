@@ -43,6 +43,32 @@ function byId(id) {
   return document.getElementById(id);
 }
 
+const localShortcuts = {
+  a: 'previous',
+  s: 'speak',
+  d: 'next',
+  f: 'reveal',
+  z: 'rate-again',
+  x: 'rate-hard',
+  c: 'rate-good',
+  v: 'rate-easy'
+};
+
+function isTextInput(target) {
+  return target
+    && (target.isContentEditable
+      || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+}
+
+window.addEventListener('keydown', (event) => {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return;
+  if (isTextInput(event.target)) return;
+  const action = localShortcuts[String(event.key || '').toLowerCase()];
+  if (!action) return;
+  event.preventDefault();
+  window.moyu.action(action);
+});
+
 function debounce(fn, delay = 200) {
   let timer = 0;
   return (...args) => {
