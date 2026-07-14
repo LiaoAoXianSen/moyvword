@@ -2542,6 +2542,46 @@ dialog.lookup-dialog {
   white-space: nowrap;
 }
 
+.strip-settings-section {
+  align-items: start;
+}
+
+.strip-settings-section > div:first-child {
+  gap: 8px;
+}
+
+.strip-appearance-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.strip-appearance-grid label {
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.range-control {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 54px;
+  gap: 8px;
+  align-items: center;
+}
+
+.range-control output {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+#stripTextColor {
+  width: 56px;
+  height: 30px;
+  padding: 2px;
+}
+
 .settings .shortcut-list {
   gap: 8px;
 }

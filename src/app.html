@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.dictionaryapi.dev https://dict.youdao.com https://*.youdao.com; media-src 'self' https://dict.youdao.com https://*.youdao.com; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>摸鱼单词v57版本</title>
+    <title>摸鱼单词v58版本</title>
     <link rel="icon" href="../assets/icon.svg" />
     <link rel="stylesheet" href="./app.css" />
   </head>
@@ -13,7 +13,7 @@
       <div class="brand">
         <span class="mark">M</span>
         <div>
-          <strong>摸鱼单词v57版本</strong>
+          <strong>摸鱼单词v58版本</strong>
           <span id="activeBookName">默认单词本</span>
         </div>
       </div>
@@ -242,12 +242,35 @@
             <output id="audioVolumeValue" for="audioVolume">80%</output>
           </span>
         </label>
-        <section class="settings-section" aria-labelledby="stripSettingsTitle">
+        <section class="settings-section strip-settings-section" aria-labelledby="stripSettingsTitle">
           <div>
             <strong id="stripSettingsTitle">横条窗口</strong>
-            <span>显示、隐藏或临时收起桌面小横条。</span>
+            <span>显示、隐藏或调整桌面小横条外观。</span>
+            <div class="strip-appearance-grid">
+              <label>
+                <span>长度</span>
+                <span class="range-control">
+                  <input id="stripWidth" type="range" min="360" max="900" step="20" />
+                  <output id="stripWidthValue" for="stripWidth">520px</output>
+                </span>
+              </label>
+              <label>
+                <span>透明度</span>
+                <span class="range-control">
+                  <input id="stripOpacity" type="range" min="40" max="100" step="5" />
+                  <output id="stripOpacityValue" for="stripOpacity">93%</output>
+                </span>
+              </label>
+              <label>
+                <span>文字颜色</span>
+                <input id="stripTextColor" type="color" value="#243044" />
+              </label>
+            </div>
           </div>
-          <button id="showStrip" type="button">显示/隐藏横条</button>
+          <div class="storage-actions">
+            <button id="showStrip" type="button">显示/隐藏横条</button>
+            <button id="resetStripAppearance" type="button">恢复默认外观</button>
+          </div>
         </section>
         <p class="shortcut-warning" id="shortcutWarning" hidden></p>
         <div class="shortcut-list" id="shortcuts"></div>

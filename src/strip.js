@@ -7,6 +7,16 @@ function el(id) {
   return document.getElementById(id);
 }
 
+function applyAppearance(settings = {}) {
+  const appearance = settings.stripAppearance || {};
+  const opacity = Math.max(40, Math.min(100, Math.round(Number(appearance.opacity) || 93))) / 100;
+  const textColor = /^#[0-9a-fA-F]{6}$/.test(String(appearance.textColor || ''))
+    ? String(appearance.textColor).toLowerCase()
+    : '#243044';
+  document.documentElement.style.setProperty('--strip-opacity', String(opacity));
+  document.documentElement.style.setProperty('--strip-ink-custom', textColor);
+}
+
 function setCompactMode(enabled) {
   document.body.classList.toggle('is-compact', enabled);
   const button = el('toggleCompactMode');
@@ -53,6 +63,7 @@ function speakWord(word) {
 
 function render(state) {
   latestState = state;
+  applyAppearance(state.settings || {});
   setCompactMode(Boolean(state.settings && state.settings.stripCompactMode));
   const word = state.word;
   if (!word) {

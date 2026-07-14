@@ -11,6 +11,36 @@ const {
   stubbornness
 } = require('./scheduler');
 const { createPersistence } = require('./persistence');
+
+function defaultStripAppearance() {
+  return {
+    width: 520,
+    opacity: 93,
+    textColor: '#243044'
+  };
+}
+
+function normalizeHexColor(value, fallback = '#243044') {
+  const clean = String(value || '').trim();
+  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(clean)) {
+    if (clean.length === 4) {
+      return `#${clean.slice(1).split('').map((part) => part + part).join('')}`.toLowerCase();
+    }
+    return clean.toLowerCase();
+  }
+  return fallback;
+}
+
+function normalizeStripAppearance(value, fallback = defaultStripAppearance()) {
+  const base = defaultStripAppearance();
+  const defaultValue = { ...base, ...(fallback || {}) };
+  const input = value && typeof value === 'object' ? value : {};
+  const width = Math.max(360, Math.min(900, Math.round(Number(input.width ?? defaultValue.width) || defaultValue.width)));
+  const opacity = Math.max(40, Math.min(100, Math.round(Number(input.opacity ?? defaultValue.opacity) || defaultValue.opacity)));
+  const textColor = normalizeHexColor(input.textColor ?? defaultValue.textColor, defaultValue.textColor);
+  return { width, opacity, textColor };
+}
+
 const {
   advanceLive,
   defaultNavigation,
@@ -41,7 +71,7 @@ const IN_DAY_HARD_REPEATS = 2;
 
 function defaultData() {
   return {
-    version: 7,
+    version: 8,
     settings: {
       dailyNew: 20,
       learningWindowSize: 15,
@@ -52,6 +82,7 @@ function defaultData() {
       answerFirst: false,
       activeBookId: 'default',
       backupDirectory: '',
+      stripAppearance: defaultStripAppearance(),
       shortcutFailures: []
     },
     books: [
@@ -138,7 +169,7 @@ function dayKeyFromTime(time) {
     if (Number(raw.version || 0) < 5 && raw.settings && raw.settings.autoSpeak === false) {
       normalized.settings.autoSpeak = true;
     }
-    normalized.version = 7;
+    normalized.version = 8;
     if (!normalized.session.date) normalized.session.date = todayKey();
     if (!normalized.session.bookProgress || typeof normalized.session.bookProgress !== 'object') normalized.session.bookProgress = {};
     if (!Array.isArray(normalized.session.windowIds)) normalized.session.windowIds = [];
@@ -154,6 +185,7 @@ function dayKeyFromTime(time) {
     normalized.settings.learningWindowSize = Math.max(1, Math.min(50, Number(normalized.settings.learningWindowSize) || 15));
     normalized.settings.audioVolume = Math.max(0, Math.min(100, Math.round(Number(normalized.settings.audioVolume) || 0)));
     normalized.settings.userMemoryCoeff = Math.max(0.7, Math.min(1.3, Number(normalized.settings.userMemoryCoeff) || 1));
+    normalized.settings.stripAppearance = normalizeStripAppearance(normalized.settings.stripAppearance, base.settings.stripAppearance);
     if (!normalized.settings.activeBookId || !normalized.books.some((book) => book.id === normalized.settings.activeBookId)) {
       normalized.settings.activeBookId = normalized.books[0].id;
     }
@@ -1446,10 +1478,19 @@ function dayKeyFromTime(time) {
       setCurrent(chooseNext(word.id));
     },
     updateSettings(patch) {
+      const incomingStripAppearance = Object.prototype.hasOwnProperty.call(patch, 'stripAppearance')
+        ? normalizeStripAppearance(
+          patch.stripAppearance && typeof patch.stripAppearance === 'object'
+            ? { ...data.settings.stripAppearance, ...patch.stripAppearance }
+            : defaultStripAppearance(),
+          data.settings.stripAppearance
+        )
+        : data.settings.stripAppearance;
       data.settings = { ...data.settings, ...patch };
       data.settings.learningWindowSize = Math.max(1, Math.min(50, Number(data.settings.learningWindowSize) || 15));
       data.settings.audioVolume = Math.max(0, Math.min(100, Math.round(Number(data.settings.audioVolume) || 0)));
       data.settings.backupDirectory = String(data.settings.backupDirectory || '').trim();
+      data.settings.stripAppearance = normalizeStripAppearance(incomingStripAppearance, data.settings.stripAppearance);
       if (!data.books.some((book) => book.id === data.settings.activeBookId)) data.settings.activeBookId = data.books[0].id;
       if (Object.prototype.hasOwnProperty.call(patch, 'learningWindowSize')) {
         data.session.windowIds = learningWindow().slice(0, data.settings.learningWindowSize);

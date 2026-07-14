@@ -5,6 +5,31 @@ let currentView = 'dashboard';
 let activeScope = 'book';
 let activeFilter = 'all';
 let onlineBooks = [];
+
+const DEFAULT_STRIP_APPEARANCE = {
+  width: 520,
+  opacity: 93,
+  textColor: '#243044'
+};
+
+function normalizedStripAppearance(settings = {}) {
+  const appearance = settings.stripAppearance || {};
+  const width = Math.max(360, Math.min(900, Math.round(Number(appearance.width) || DEFAULT_STRIP_APPEARANCE.width)));
+  const opacity = Math.max(40, Math.min(100, Math.round(Number(appearance.opacity) || DEFAULT_STRIP_APPEARANCE.opacity)));
+  const textColor = /^#[0-9a-fA-F]{6}$/.test(String(appearance.textColor || ''))
+    ? String(appearance.textColor).toLowerCase()
+    : DEFAULT_STRIP_APPEARANCE.textColor;
+  return { width, opacity, textColor };
+}
+
+function stripAppearancePatch() {
+  return {
+    width: Number(byId('stripWidth').value) || DEFAULT_STRIP_APPEARANCE.width,
+    opacity: Number(byId('stripOpacity').value) || DEFAULT_STRIP_APPEARANCE.opacity,
+    textColor: byId('stripTextColor').value || DEFAULT_STRIP_APPEARANCE.textColor
+  };
+}
+
 let activeDownloadId = null;
 let randomPreview = [];
 let manualNewWords = [];
@@ -376,6 +401,12 @@ function render(nextState) {
   byId('autoSpeak').checked = Boolean(settings.autoSpeak);
   byId('audioVolume').value = String(settings.audioVolume ?? 80);
   byId('audioVolumeValue').value = `${settings.audioVolume ?? 80}%`;
+  const stripAppearance = normalizedStripAppearance(settings);
+  byId('stripWidth').value = String(stripAppearance.width);
+  byId('stripWidthValue').value = `${stripAppearance.width}px`;
+  byId('stripOpacity').value = String(stripAppearance.opacity);
+  byId('stripOpacityValue').value = `${stripAppearance.opacity}%`;
+  byId('stripTextColor').value = stripAppearance.textColor;
   setSuggestedCountInput('managerRandomCount', suggestedNewWordCount(stats.dailyPlan));
   byId('todayPlan').textContent = `本词本：新词 ${stats.dailyPlan.newWords.completed}/${stats.dailyPlan.newWords.target}，复习 ${stats.dailyPlan.reviews.completed}/${stats.dailyPlan.reviews.target}，短循环 ${stats.dailyPlan.shortLoops.due}/${stats.dailyPlan.shortLoops.active}。${stats.planText}；下一次复习：${stats.nextDueLabel}`;
   byId('storagePath').textContent = state.storage ? `主数据：${state.storage.path}` : '';
@@ -1102,6 +1133,25 @@ byId('audioVolume').addEventListener('input', (event) => {
 });
 byId('audioVolume').addEventListener('change', (event) => {
   window.moyu.updateSettings({ audioVolume: Number(event.target.value) });
+});
+byId('stripWidth').addEventListener('input', (event) => {
+  byId('stripWidthValue').value = `${event.target.value}px`;
+});
+byId('stripWidth').addEventListener('change', () => {
+  window.moyu.updateSettings({ stripAppearance: stripAppearancePatch() });
+});
+byId('stripOpacity').addEventListener('input', (event) => {
+  byId('stripOpacityValue').value = `${event.target.value}%`;
+});
+byId('stripOpacity').addEventListener('change', () => {
+  window.moyu.updateSettings({ stripAppearance: stripAppearancePatch() });
+});
+byId('stripTextColor').addEventListener('change', () => {
+  window.moyu.updateSettings({ stripAppearance: stripAppearancePatch() });
+});
+byId('resetStripAppearance').addEventListener('click', async () => {
+  const nextState = await window.moyu.updateSettings({ stripAppearance: DEFAULT_STRIP_APPEARANCE });
+  render(nextState);
 });
 byId('chooseBackupDirectory').addEventListener('click', async () => {
   const nextState = await window.moyu.chooseBackupDirectory();

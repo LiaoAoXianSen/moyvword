@@ -9,6 +9,8 @@
   --primary-soft: oklch(0.93 0.052 205);
   --accent: oklch(0.5 0.105 252);
   --success: oklch(0.56 0.12 155);
+  --strip-opacity: 0.93;
+  --strip-ink-custom: #243044;
 }
 
 * {
@@ -21,7 +23,7 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  color: var(--ink);
+  color: var(--strip-ink-custom, var(--ink));
   background: transparent;
   font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
 }
@@ -56,8 +58,8 @@ body {
   border-right: 1px solid var(--line);
   border-radius: 0;
   padding: 0 10px;
-  color: var(--ink);
-  background: linear-gradient(90deg, var(--surface-soft), transparent);
+  color: var(--strip-ink-custom, var(--ink));
+  background: linear-gradient(90deg, color-mix(in oklch, var(--surface-soft) calc(var(--strip-opacity, 0.93) * 100%), transparent), transparent);
   text-align: left;
   cursor: pointer;
   -webkit-app-region: no-drag;
@@ -97,7 +99,7 @@ body.is-compact #word {
   min-width: 0;
   overflow: hidden;
   padding: 0 10px;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--strip-ink-custom, var(--muted)) 68%, transparent);
   font-size: 11px;
   line-height: 28px;
   text-overflow: ellipsis;
@@ -132,7 +134,7 @@ body.is-expanded .details {
   justify-content: space-between;
   gap: 6px;
   margin-bottom: 5px;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--strip-ink-custom, var(--muted)) 62%, transparent);
   font-size: 11px;
 }
 
@@ -149,7 +151,7 @@ body.is-expanded .details {
   min-height: 15px;
   overflow: hidden;
   margin-top: 3px;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--strip-ink-custom, var(--muted)) 62%, transparent);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -160,7 +162,7 @@ button {
   height: 22px;
   border: 1px solid transparent;
   border-radius: 8px;
-  color: var(--ink);
+  color: var(--strip-ink-custom, var(--ink));
   background: transparent;
   font: inherit;
   font-size: 11px;
@@ -223,7 +225,7 @@ button[data-action="rate-easy"] {
   border-color: oklch(0.82 0.032 220 / 0.9);
   border-radius: 10px;
   background:
-    linear-gradient(180deg, oklch(1 0 0 / 0.93), oklch(0.965 0.012 220 / 0.93));
+    linear-gradient(180deg, oklch(1 0 0 / var(--strip-opacity, 0.93)), oklch(0.965 0.012 220 / var(--strip-opacity, 0.93)));
   box-shadow: 0 8px 20px oklch(0.2 0.035 235 / 0.12), 0 1px 2px oklch(0.2 0.03 235 / 0.08);
 }
 
@@ -263,12 +265,12 @@ button {
   min-width: 22px;
   height: 22px;
   border-radius: 7px;
-  color: oklch(0.34 0.045 235);
+  color: var(--strip-ink-custom, oklch(0.34 0.045 235));
 }
 
 button:hover {
   border-color: oklch(0.66 0.08 205);
-  color: oklch(0.35 0.1 205);
+  color: var(--primary);
   background: var(--primary-soft);
 }
 
@@ -292,5 +294,5 @@ body.is-expanded .strip {
 .rating-actions button {
   min-width: 56px;
   border-color: oklch(0.84 0.024 220);
-  background: oklch(0.996 0.002 220 / 0.85);
+  background: oklch(0.996 0.002 220 / calc(var(--strip-opacity, 0.93) * 0.92));
 }
