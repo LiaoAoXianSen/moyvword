@@ -124,6 +124,8 @@ body {
 
 .side-nav {
   flex: 1 1 auto;
+  align-content: start;
+  grid-auto-rows: min-content;
   min-height: 0;
   overflow: auto;
   padding-bottom: 8px;
@@ -132,11 +134,11 @@ body {
 
 .nav-item {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 10px;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 8px;
   border-color: transparent;
   border-radius: 8px;
   background: transparent;
@@ -149,11 +151,11 @@ body {
 .nav-item span {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -2574,4 +2576,22 @@ button.nav-item.is-active:hover {
 
 .settings-trigger {
   padding: 0 8px;
+}
+
+.today-review-button {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.today-review-button.is-active {
+  border-color: var(--primary);
+  color: white;
+  background: var(--primary);
+}
+
+.today-review-button:disabled {
+  box-shadow: none;
 }

@@ -61,7 +61,17 @@ function defaultData() {
       planDate: '',
       planItems: [],
       planCompletionToken: '',
-      manualPreviewId: ''
+      manualPreviewId: '',
+      todayReview: {
+        date: todayKey(),
+        queue: [],
+        sourceIds: [],
+        attempts: {},
+        misses: {},
+        hard: {},
+        startedAt: 0,
+        finishedAt: 0
+      }
     }
   };
 }
@@ -117,6 +127,7 @@ async function createStore(dataPaths) {
     if (!normalized.session.planDate) normalized.session.planDate = '';
     if (!normalized.session.planCompletionToken) normalized.session.planCompletionToken = '';
     if (!normalized.session.manualPreviewId) normalized.session.manualPreviewId = '';
+    normalized.session.todayReview = normalizeTodayReview(normalized.session.todayReview);
     normalized.settings.learningWindowSize = Math.max(1, Math.min(50, Number(normalized.settings.learningWindowSize) || 15));
     normalized.settings.audioVolume = Math.max(0, Math.min(100, Math.round(Number(normalized.settings.audioVolume) || 0)));
     normalized.settings.userMemoryCoeff = Math.max(0.7, Math.min(1.3, Number(normalized.settings.userMemoryCoeff) || 1));
@@ -167,6 +178,47 @@ async function createStore(dataPaths) {
         };
       })
       .filter((item) => item.wordId);
+  }
+
+  function defaultTodayReview() {
+    return {
+      date: todayKey(),
+      queue: [],
+      sourceIds: [],
+      attempts: {},
+      misses: {},
+      hard: {},
+      startedAt: 0,
+      finishedAt: 0
+    };
+  }
+
+  function normalizeTodayReview(review) {
+    const raw = review && typeof review === 'object' ? review : {};
+    const queue = Array.isArray(raw.queue)
+      ? raw.queue.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+    const sourceIds = Array.isArray(raw.sourceIds)
+      ? raw.sourceIds.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+    const uniqueSourceIds = [];
+    const seen = new Set();
+    sourceIds.forEach((id) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      uniqueSourceIds.push(id);
+    });
+    return {
+      ...defaultTodayReview(),
+      date: raw.date === todayKey() ? todayKey() : '',
+      queue,
+      sourceIds: uniqueSourceIds,
+      attempts: raw.attempts && typeof raw.attempts === 'object' ? { ...raw.attempts } : {},
+      misses: raw.misses && typeof raw.misses === 'object' ? { ...raw.misses } : {},
+      hard: raw.hard && typeof raw.hard === 'object' ? { ...raw.hard } : {},
+      startedAt: Number(raw.startedAt) || 0,
+      finishedAt: Number(raw.finishedAt) || 0
+    };
   }
 
   function hasLearningRecord(word) {
@@ -238,7 +290,8 @@ async function createStore(dataPaths) {
       windowBookId: data.settings.activeBookId,
       planDate: data.session.planDate || '',
       planItems: normalizePlanItems(data.session.planItems || []),
-      planCompletionToken: ''
+      planCompletionToken: '',
+      todayReview: defaultTodayReview()
     };
     save();
   }
@@ -387,6 +440,184 @@ async function createStore(dataPaths) {
       if (item.status !== 'completed' || dayKeyFromTime(item.completedAt || 0) !== today) return false;
       return type ? item.type === type : true;
     });
+  }
+
+  function todayReviewSourceItems() {
+    return completedPlanItemsToday()
+      .slice()
+      .sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
+  }
+
+  function todayReviewSourceIds() {
+    const ids = [];
+    const seen = new Set();
+    todayReviewSourceItems().forEach((item) => {
+      if (seen.has(item.wordId)) return;
+      seen.add(item.wordId);
+      ids.push(item.wordId);
+    });
+    return ids;
+  }
+
+  function cleanReviewCounterMap(map, validIds) {
+    const clean = {};
+    Object.entries(map || {}).forEach(([id, value]) => {
+      const key = String(id || '').trim();
+      if (!validIds.has(key)) return;
+      clean[key] = Math.max(0, Math.floor(Number(value) || 0));
+    });
+    return clean;
+  }
+
+  function todayReviewState() {
+    refreshDailySession();
+    const review = normalizeTodayReview(data.session.todayReview);
+    const sourceIds = todayReviewSourceIds().filter((id) => !!findWord(id));
+    const sourceSet = new Set(sourceIds);
+    const queue = review.date === todayKey()
+      ? review.queue.filter((id) => sourceSet.has(id) && findWord(id))
+      : [];
+    const attempts = cleanReviewCounterMap(review.attempts, sourceSet);
+    const misses = cleanReviewCounterMap(review.misses, sourceSet);
+    const hard = cleanReviewCounterMap(review.hard, sourceSet);
+    data.session.todayReview = {
+      ...review,
+      date: todayKey(),
+      sourceIds,
+      queue,
+      attempts,
+      misses,
+      hard,
+      finishedAt: review.finishedAt && queue.length ? 0 : review.finishedAt
+    };
+    const active = !!(data.session.todayReview.startedAt && !data.session.todayReview.finishedAt && queue.length > 0);
+    const remainingWords = new Set(queue).size;
+    return {
+      date: todayKey(),
+      active,
+      total: sourceIds.length,
+      remainingCards: queue.length,
+      remainingWords,
+      completed: Math.max(0, sourceIds.length - remainingWords),
+      startedAt: data.session.todayReview.startedAt || 0,
+      finishedAt: data.session.todayReview.finishedAt || 0,
+      canStart: activePlanItems().length === 0 && sourceIds.length > 0,
+      misses: Object.values(misses).reduce((sum, value) => sum + value, 0),
+      hard: Object.values(hard).reduce((sum, value) => sum + value, 0)
+    };
+  }
+
+  function isTodayReviewWord(word) {
+    if (!word) return false;
+    const review = todayReviewState();
+    return review.active && data.session.todayReview.queue.includes(word.id);
+  }
+
+  function removeFirstReviewOccurrence(queue, wordId) {
+    const nextQueue = queue.slice();
+    const index = nextQueue.indexOf(wordId);
+    if (index !== -1) nextQueue.splice(index, 1);
+    return nextQueue;
+  }
+
+  function insertTodayReviewRepeats(queue, wordId, count, attempts) {
+    const maxAppearances = 8;
+    const queuedAppearances = queue.filter((id) => id === wordId).length;
+    const allowed = Math.max(0, maxAppearances - attempts - queuedAppearances);
+    let nextQueue = queue.slice();
+    const repeatCount = Math.min(count, allowed);
+    for (let index = 0; index < repeatCount; index += 1) {
+      const insertAt = Math.min(nextQueue.length, Math.max(0, (index + 1) * 3 - 1));
+      nextQueue = [
+        ...nextQueue.slice(0, insertAt),
+        wordId,
+        ...nextQueue.slice(insertAt)
+      ];
+    }
+    return nextQueue;
+  }
+
+  function moveToTodayReviewNext(nextQueue, reviewPatch = {}) {
+    const review = normalizeTodayReview(data.session.todayReview);
+    const nextWord = findWord(nextQueue[0] || '');
+    rememberCurrentForPrevious(nextWord ? nextWord.id : null);
+    data.session.todayReview = {
+      ...review,
+      ...reviewPatch,
+      date: todayKey(),
+      queue: nextQueue,
+      startedAt: reviewPatch.startedAt || review.startedAt || now(),
+      finishedAt: nextQueue.length ? 0 : (reviewPatch.finishedAt || now())
+    };
+    data.currentId = nextWord ? nextWord.id : null;
+    data.session.manualPreviewId = '';
+    data.revealed = !!data.settings.answerFirst;
+    save();
+  }
+
+  function startTodayReview() {
+    refreshDailySession();
+    ensureDailyPlan();
+    const state = todayReviewState();
+    if (!state.total) throw new Error('今天还没有可回顾的已学单词。');
+    if (!state.canStart && !state.active) throw new Error('今日计划还没有完成，先把今天背完。');
+
+    const existing = normalizeTodayReview(data.session.todayReview);
+    const sourceIds = todayReviewSourceIds().filter((id) => !!findWord(id));
+    const queue = state.active
+      ? existing.queue.filter((id) => sourceIds.includes(id) && findWord(id))
+      : sourceIds.slice();
+    data.session.todayReview = {
+      ...defaultTodayReview(),
+      date: todayKey(),
+      sourceIds,
+      queue,
+      attempts: state.active ? existing.attempts : {},
+      misses: state.active ? existing.misses : {},
+      hard: state.active ? existing.hard : {},
+      startedAt: state.active ? existing.startedAt : now(),
+      finishedAt: 0
+    };
+    const firstWord = findWord(queue[0] || '');
+    setCurrent(firstWord, false, false);
+    return todayReviewState();
+  }
+
+  function rateTodayReviewWord(word, grade) {
+    const review = normalizeTodayReview(data.session.todayReview);
+    if (!word || !review.queue.includes(word.id)) return false;
+    const wordId = word.id;
+    const attempts = cleanReviewCounterMap(review.attempts, new Set(review.sourceIds));
+    const misses = cleanReviewCounterMap(review.misses, new Set(review.sourceIds));
+    const hard = cleanReviewCounterMap(review.hard, new Set(review.sourceIds));
+    attempts[wordId] = Math.max(0, Number(attempts[wordId]) || 0) + 1;
+
+    let nextQueue = removeFirstReviewOccurrence(review.queue, wordId);
+    if (grade === 'again') {
+      misses[wordId] = Math.max(0, Number(misses[wordId]) || 0) + 1;
+      nextQueue = insertTodayReviewRepeats(nextQueue, wordId, 3, attempts[wordId]);
+    } else if (grade === 'hard') {
+      hard[wordId] = Math.max(0, Number(hard[wordId]) || 0) + 1;
+      nextQueue = insertTodayReviewRepeats(nextQueue, wordId, 1, attempts[wordId]);
+    } else {
+      nextQueue = nextQueue.filter((id) => id !== wordId);
+    }
+
+    moveToTodayReviewNext(nextQueue, { attempts, misses, hard });
+    return true;
+  }
+
+  function skipTodayReviewWord(word) {
+    const review = normalizeTodayReview(data.session.todayReview);
+    if (!word || !review.queue.includes(word.id)) return false;
+    const nextQueue = review.queue.slice();
+    const currentIndex = nextQueue.indexOf(word.id);
+    if (currentIndex !== -1) {
+      const [currentId] = nextQueue.splice(currentIndex, 1);
+      nextQueue.push(currentId);
+    }
+    moveToTodayReviewNext(nextQueue);
+    return true;
   }
 
   function remainingPlanCapacity() {
@@ -648,6 +879,7 @@ async function createStore(dataPaths) {
         shortLoops: { active: learning, due: dueWords.filter(isLoopReady).length },
         window: { total: windowWords.length, size: data.settings.learningWindowSize }
       },
+      todayReview: todayReviewState(),
       debt: {
         urgent: urgentDebt.length,
         regular: regularDebt.length,
@@ -777,7 +1009,7 @@ async function createStore(dataPaths) {
     data.session.windowIds = ids;
     if (data.currentId && !ids.includes(data.currentId)) {
       const current = byId.get(data.currentId);
-      if (!current || !isStudyWord(current)) data.currentId = null;
+      if (!current || (!isStudyWord(current) && !isTodayReviewWord(current))) data.currentId = null;
     }
     return ids.map((id) => byId.get(id)).filter(Boolean);
   }
@@ -813,19 +1045,29 @@ async function createStore(dataPaths) {
   function currentWord() {
     let word = data.words.find((w) => w.id === data.currentId);
     const isManualPreview = word && data.session.manualPreviewId === word.id;
-    if (!word || (!isStudyWord(word) && !isManualPreview)) {
-      word = chooseNext();
+    const isTodayReview = isTodayReviewWord(word);
+    if (!word || (!isStudyWord(word) && !isManualPreview && !isTodayReview)) {
+      const review = todayReviewState();
+      word = review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext();
       data.currentId = word ? word.id : null;
-      data.session.manualPreviewId = '';
+      if (review.active) data.session.manualPreviewId = '';
       data.revealed = !!data.settings.answerFirst;
       saveSoon();
     }
     return word || null;
   }
 
+  function rememberCurrentForPrevious(nextId = null) {
+    if (!data.currentId || data.currentId === nextId) return;
+    if (data.session.manualPreviewId === data.currentId) return;
+    const current = findWord(data.currentId);
+    if (!current) return;
+    if (data.history[data.history.length - 1] !== current.id) data.history.push(current.id);
+    if (data.history.length > 200) data.history = data.history.slice(-200);
+  }
+
   function setCurrent(word, keepReveal = false, manualPreview = false, deferred = false) {
-    const current = data.words.find((item) => item.id === data.currentId);
-    if (current && isStudyWord(current)) data.history.push(data.currentId);
+    rememberCurrentForPrevious(word ? word.id : null);
     data.currentId = word ? word.id : null;
     data.session.manualPreviewId = manualPreview && word ? word.id : '';
     data.revealed = keepReveal ? data.revealed : !!data.settings.answerFirst;
@@ -835,8 +1077,15 @@ async function createStore(dataPaths) {
 
   function publicWord(word) {
     if (!word) return null;
+    const isTodayReview = data.session.todayReview
+      && data.session.todayReview.date === todayKey()
+      && data.session.todayReview.startedAt
+      && !data.session.todayReview.finishedAt
+      && (data.session.todayReview.queue || []).includes(word.id);
     const queueLabel = data.session.manualPreviewId === word.id
       ? '手动回顾'
+      : isTodayReview
+      ? '今日回顾'
       : word.status === 'new'
       ? '新词'
       : word.status === 'learning'
@@ -982,14 +1231,25 @@ async function createStore(dataPaths) {
       data.revealed = !data.revealed;
       saveSoon();
     },
+    startTodayReview() {
+      return startTodayReview();
+    },
     rate(grade) {
       if (!['again', 'hard', 'good', 'easy'].includes(grade)) return;
       const word = currentWord();
       if (!word) return;
       if (data.session.manualPreviewId === word.id) {
-        setCurrent(chooseNext(word.id));
+        const review = todayReviewState();
+        setCurrent(review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext(word.id));
         return;
       }
+      if (isTodayReviewWord(word)) {
+        rateTodayReviewWord(word, grade);
+        return;
+      }
+      // A completed plan item can be removed from the learning window before
+      // the next card is selected, so preserve it while it is still current.
+      rememberCurrentForPrevious();
       const beforeStatus = word.status;
       const longTermRating = word.longTermRatingDate !== todayKey();
       let rated;
@@ -1046,6 +1306,16 @@ async function createStore(dataPaths) {
       setCurrent(chooseNext(word.id));
     },
     skip() {
+      const word = currentWord();
+      if (word && data.session.manualPreviewId === word.id) {
+        const review = todayReviewState();
+        setCurrent(review.active ? findWord(data.session.todayReview.queue[0]) : chooseNext(word.id), false, false, true);
+        return;
+      }
+      if (isTodayReviewWord(word)) {
+        skipTodayReviewWord(word);
+        return;
+      }
       tickSmallLoops(data.currentId);
       setCurrent(chooseNext(data.currentId), false, false, true);
     },
@@ -1072,6 +1342,10 @@ async function createStore(dataPaths) {
     dismissCurrent() {
       const word = currentWord();
       if (!word) return;
+      if (isTodayReviewWord(word)) {
+        skipTodayReviewWord(word);
+        return;
+      }
       const index = data.words.findIndex((item) => item.id === word.id);
       data.words[index] = { ...word, status: 'done', updatedAt: now() };
       cancelActivePlanItems(word.id);

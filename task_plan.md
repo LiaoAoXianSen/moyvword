@@ -51,3 +51,8 @@
 - [completed] 创建 `D:\project\moyvword`，复制源码、项目文档、v44 便携包及 SQLite 主库/备份。
 - [completed] 在新目录执行 `npm install`、全部 Node 语法检查和 `npm run dist`。
 - [completed] 新构建 EXE 已写入 `release\摸鱼背词横条-v44.exe`；旧目录暂作回滚，不在本次迁移中删除。
+
+## 2026-07-13 今日回顾功能
+- [completed] 增加“今日计划完成后复习今日已学”的独立回顾队列。
+- [completed] 回顾评分只影响本次队列：不认识追加 3 次、模糊追加 1 次、认识/熟知移出，不写入 FSRS、短循环、今日计划或统计。
+- [completed] 在首页增加受计划完成状态控制的入口，并完成语法检查与打包验证。

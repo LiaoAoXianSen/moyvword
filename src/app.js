@@ -158,6 +158,25 @@ function setSuggestedCountInput(id, value) {
   input.value = String(value);
 }
 
+function renderTodayReviewAction(review = {}) {
+  const button = byId('startTodayReview');
+  if (!button) return;
+  const active = !!review.active;
+  const available = active || !!review.canStart;
+  button.disabled = !available;
+  button.classList.toggle('is-active', active);
+  if (active) {
+    button.textContent = review.remainingCards ? `继续今日回顾 · ${review.remainingCards}` : '继续今日回顾';
+  } else if (review.finishedAt && review.total) {
+    button.textContent = `再复习一轮 · ${review.total}`;
+  } else if (review.total) {
+    button.textContent = `复习今日已学 · ${review.total}`;
+  } else {
+    button.textContent = '复习今日已学';
+  }
+  button.title = available ? '' : '背完今日计划后可用';
+}
+
 function isReadyWord(word) {
   return (word.due || 0) <= Date.now()
     || (word.status === 'learning' && (word.buriedUntil || 0) > Date.now() && (word.loopCardsLeft || 0) <= 0);
@@ -165,13 +184,17 @@ function isReadyWord(word) {
 
 function renderStudyBoard(stats) {
   const plan = stats.dailyPlan;
+  const review = stats.todayReview || {};
   const debt = stats.debt;
   const stages = stats.learningStages;
   const remainingToday = plan.newWords.remaining + plan.reviews.remaining;
   byId('planWindow').textContent = `学习窗口 ${plan.window.total}/${plan.window.size}`;
-  byId('planOverview').textContent = remainingToday
+  byId('planOverview').textContent = review.active
+    ? `今日回顾进行中 · ${review.remainingCards || 0}/${review.total || review.remainingCards || 0}`
+    : remainingToday
     ? `今日计划内 ${remainingToday}`
-    : '今日计划已完成';
+    : (review.canStart ? '今日计划已完成，可开始回顾' : '今日计划已完成');
+  renderTodayReviewAction(review);
   byId('newPlanText').textContent = `${plan.newWords.completed}/${plan.newWords.target}`;
   byId('newPlanHint').textContent = plan.newWords.remaining
     ? `计划内新词剩余 ${plan.newWords.remaining}`
@@ -375,15 +398,21 @@ function render(nextState) {
 
   if (!word) {
     byId('currentWord').textContent = '没有单词';
-    byId('currentMeta').textContent = stats.dailyPlan && stats.dailyPlan.complete
-      ? (totalPlanCapacityLeft(stats.dailyPlan) > 0 ? '今日计划已完成，可以继续复习或手动加入新词。' : '今日目标已完成。')
-      : '先从当前单词本选择新词，或等待到期复习进入计划。';
+    const review = stats.todayReview || {};
+    byId('currentMeta').textContent = review.active
+      ? `今日回顾进行中 · 剩余 ${review.remainingCards || 0} 张`
+      : stats.dailyPlan && stats.dailyPlan.complete
+        ? (review.canStart ? '今日计划已完成，可以开始回顾。' : '今日目标已完成。')
+        : '先从当前单词本选择新词，或等待到期复习进入计划。';
     byId('currentAnswer').textContent = '';
     return;
   }
 
+  const review = stats.todayReview || {};
   byId('currentWord').textContent = word.word;
-  byId('currentMeta').textContent = `${word.queueLabel} · ${word.stageLabel} · 保持 ${word.retention}% · 顽固 ${word.stubbornness} · 逾期 ${word.overdueRatio} · ${word.phonetic || '无音标'} · 下次：${word.dueLabel} · ${word.favorite ? '已收藏' : '未收藏'}`;
+  byId('currentMeta').textContent = word.queueLabel === '今日回顾'
+    ? `今日回顾 · 剩余 ${review.remainingCards || 0} 张 · ${word.stageLabel} · ${word.phonetic || '无音标'} · ${word.favorite ? '已收藏' : '未收藏'}`
+    : `${word.queueLabel} · ${word.stageLabel} · 保持 ${word.retention}% · 顽固 ${word.stubbornness} · 逾期 ${word.overdueRatio} · ${word.phonetic || '无音标'} · 下次：${word.dueLabel} · ${word.favorite ? '已收藏' : '未收藏'}`;
   const answer = byId('currentAnswer');
   if (state.revealed) {
     const meaning = document.createElement('strong');
@@ -901,6 +930,18 @@ async function openDownloadBookDialog() {
 
 byId('favorite').addEventListener('click', () => window.moyu.action('favorite'));
 byId('showStrip').addEventListener('click', () => window.moyu.action('boss'));
+byId('startTodayReview').addEventListener('click', async () => {
+  const button = byId('startTodayReview');
+  button.disabled = true;
+  try {
+    await window.moyu.startTodayReview();
+    const nextState = await window.moyu.getState();
+    render(nextState);
+  } catch (error) {
+    byId('planOverview').textContent = error.message || '今日回顾暂时不能开始。';
+    renderTodayReviewAction(state && state.stats ? state.stats.todayReview : {});
+  }
+});
 byId('openSettings').addEventListener('click', () => byId('settingsDialog').showModal());
 byId('closeSettings').addEventListener('click', () => byId('settingsDialog').close());
 byId('openLookup').addEventListener('click', () => openLookupDialog());

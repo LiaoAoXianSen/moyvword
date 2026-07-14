@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('moyu', {
   addReviewWordsToPlan: (ids) => ipcRenderer.invoke('plan:add-review-words', ids),
   addDueReviews: (count) => ipcRenderer.invoke('plan:add-due-reviews', count),
   getPlan: () => ipcRenderer.invoke('plan:get'),
+  startTodayReview: () => ipcRenderer.invoke('today-review:start'),
   listBooks: () => ipcRenderer.invoke('books:list'),
   addBook: (name) => ipcRenderer.invoke('books:add', name),
   renameBook: (id, name) => ipcRenderer.invoke('books:rename', id, name),
