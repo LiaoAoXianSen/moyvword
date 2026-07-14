@@ -120,71 +120,53 @@ function safeNumber(value, fallback, min = 0) {
   return Number.isFinite(value) ? Math.max(min, value) : fallback;
 }
 
-function buildFallbackSchedule(current, grade, t) {
-  const seenCount = (current.seenCount || 0) + 1;
-  const reviewCount = (current.reviewCount || 0) + 1;
-  const wrongCount = current.wrongCount || 0;
-  const hardCount = current.hardCount || 0;
-  const lapseCount = current.lapseCount || 0;
-  const baseStage = clampStage(current.memoryStage || 0);
-  const currentStability = Math.max(current.stability || 0, 0.02);
+// Momo-style cross-day intervals (days). Only first rating of the day uses these.
+const MOMO_GOOD_STEPS = [7, 15, 30, 60, 90, 120, 180, 365];
+const MOMO_MAX_DAYS = 365;
 
-  let interval;
-  let status = 'review';
-  let memoryStage = baseStage;
-  let stability = currentStability;
-  let difficulty = clamp(current.difficulty || 5, 1, 10);
-  let familiarity = current.familiarity || 0;
-  let loopCardsLeft = 0;
+function wordStaticDifficulty(current) {
+  return clamp(Number(current.wordDifficulty) || estimateWordDifficulty(current.word) || 5, 1, 10);
+}
 
-  if (grade === 'again') {
-    interval = 3 * MINUTE;
-    status = 'learning';
-    memoryStage = 0;
-    stability = Math.max(0.02, currentStability * 0.35);
-    difficulty = clamp(difficulty + 1.2, 1, 10);
-    familiarity = clamp((current.familiarity || 20) * 0.35, 5, 45);
-    loopCardsLeft = 2;
-  } else if (grade === 'hard') {
-    interval = 10 * MINUTE;
-    status = 'learning';
-    memoryStage = Math.max(0, baseStage - 1);
-    stability = Math.max(0.05, currentStability * 0.65);
-    difficulty = clamp(difficulty + 0.7, 1, 10);
-    familiarity = clamp((current.familiarity || 35) * 0.65, 20, 65);
-    loopCardsLeft = 3;
-  } else {
-    const advance = grade === 'easy' ? 2 : 1;
-    memoryStage = clampStage(baseStage + advance);
-    const stageDelay = stageInfo(memoryStage).delay;
-    const stabilityBoost = grade === 'easy' ? 1.75 : 1.25;
-    stability = Math.max(stageDelay / DAY, currentStability * stabilityBoost);
-    interval = Math.max(stageDelay, msFromDays(stability));
-    difficulty = clamp(difficulty - (grade === 'easy' ? 0.45 : 0.2), 1, 10);
-    familiarity = grade === 'easy' ? 95 : 82;
+function momoAgainDays(current) {
+  // G1 forget: 1-3 days; harder words return sooner.
+  const d = wordStaticDifficulty(current);
+  if (d >= 7.5) return 1;
+  if (d >= 4.5) return 2;
+  return 3;
+}
+
+function momoHardDays(current) {
+  // G2 fuzzy: 3-7 days.
+  const d = wordStaticDifficulty(current);
+  if (d >= 7.5) return 3;
+  if (d >= 4.5) return 5;
+  return 7;
+}
+
+function momoGoodStepIndex(current, grade) {
+  const prev = String(current.longTermGrade || '');
+  const existing = Math.max(0, Math.min(MOMO_GOOD_STEPS.length - 1, Math.floor(Number(current.goodStepIndex) || 0)));
+  if (grade !== 'good' && grade !== 'easy') return 0;
+  if (current.status === 'new' || !current.reviewCount) return 0;
+  if (prev === 'again' || prev === 'hard' || !prev) return 0;
+  if (prev === 'good' || prev === 'easy') {
+    return Math.min(MOMO_GOOD_STEPS.length - 1, existing + 1);
   }
+  return existing;
+}
 
-  return {
-    ...current,
-    status,
-    stability,
-    difficulty,
-    memoryStage,
-    interval,
-    due: t + interval,
-    fsrsState: status === 'learning' ? State.Learning : State.Review,
-    fsrsLearningSteps: status === 'learning' ? Math.min(2, (current.fsrsLearningSteps || 0) + 1) : 0,
-    seenCount,
-    reviewCount,
-    familiarity,
-    loopCardsLeft,
-    buriedUntil: status === 'learning' ? t + interval : 0,
-    wrongCount: wrongCount + (grade === 'again' || grade === 'hard' ? 1 : 0),
-    hardCount: hardCount + (grade === 'hard' ? 1 : 0),
-    lapseCount: lapseCount + (grade === 'again' || grade === 'hard' ? 1 : 0),
-    lastReviewedAt: t,
-    updatedAt: t
-  };
+function momoIntervalDays(current, grade) {
+  if (grade === 'again') return momoAgainDays(current);
+  if (grade === 'hard') return momoHardDays(current);
+  if (grade === 'easy') return MOMO_MAX_DAYS;
+  const step = momoGoodStepIndex(current, 'good');
+  return MOMO_GOOD_STEPS[step] || 7;
+}
+
+function buildFallbackSchedule(current, grade, t) {
+  // Kept as a pure Momo long-term scheduler (no short-term minute intervals).
+  return rateWord(current, grade, t);
 }
 
 function repairedFsrsCard(current, t) {
@@ -248,6 +230,10 @@ function createWord(raw, index) {
     favorite: false,
     buriedUntil: 0,
     longTermRatingDate: '',
+    longTermGrade: '',
+    goodStepIndex: 0,
+    weakTag: false,
+    masterTag: false,
     dayLoopDate: '',
     dayLoopDue: 0,
     dayLoopCardsBefore: 0,
@@ -259,7 +245,7 @@ function createWord(raw, index) {
 }
 
 function normalizeWord(word) {
-  return {
+  const merged = {
     memoryStage: 0,
     stability: 0,
     difficulty: 5,
@@ -278,6 +264,10 @@ function normalizeWord(word) {
     favorite: false,
     buriedUntil: 0,
     longTermRatingDate: '',
+    longTermGrade: '',
+    goodStepIndex: 0,
+    weakTag: false,
+    masterTag: false,
     dayLoopDate: '',
     dayLoopDue: 0,
     dayLoopCardsBefore: 0,
@@ -286,59 +276,113 @@ function normalizeWord(word) {
     wordDifficulty: estimateWordDifficulty(word && word.word),
     ...word
   };
+  if (merged.masterTag || merged.status === 'done') {
+    merged.status = 'done';
+    merged.masterTag = true;
+  }
+  return merged;
 }
 
-function rateWord(word, grade) {
-  const t = now();
+function rateWord(word, grade, at = now()) {
+  const t = at;
   const current = normalizeWord(word);
-  const fsrsCard = nextFsrsCard(current, grade, t);
-  if (!fsrsCard) return buildFallbackSchedule(current, grade, t);
-  const dueTime = fsrsCard.due && fsrsCard.due.getTime();
-  if (!Number.isFinite(dueTime) || dueTime <= t) return buildFallbackSchedule(current, grade, t);
-  const interval = Math.max(0, dueTime - t);
-  const next = {
-    ...current,
-    status: stateToStatus(fsrsCard.state),
-    stability: fsrsCard.stability,
-    difficulty: fsrsCard.difficulty,
-    memoryStage: stageFromStability(fsrsCard.stability || 0),
-    interval,
-    due: dueTime,
-    fsrsState: fsrsCard.state,
-    fsrsLearningSteps: fsrsCard.learning_steps,
-    seenCount: current.seenCount + 1,
-    reviewCount: fsrsCard.reps,
-    lastReviewedAt: fsrsCard.last_review ? fsrsCard.last_review.getTime() : t,
-    updatedAt: t
-  };
+  const seenCount = (current.seenCount || 0) + 1;
+  const reviewCount = (current.reviewCount || 0) + 1;
+  const d = wordStaticDifficulty(current);
+
+  // G4 熟知: permanent master, stop all future pushes.
+  if (grade === 'easy') {
+    return {
+      ...current,
+      status: 'done',
+      masterTag: true,
+      weakTag: false,
+      stability: Math.max(Number(current.stability) || 0, MOMO_MAX_DAYS),
+      difficulty: clamp((current.difficulty || d) - 0.8, 1, 10),
+      memoryStage: STABILITY_BANDS.length - 1,
+      goodStepIndex: MOMO_GOOD_STEPS.length - 1,
+      interval: 0,
+      due: 0,
+      fsrsState: State.Review,
+      fsrsLearningSteps: 0,
+      familiarity: 100,
+      loopCardsLeft: 0,
+      buriedUntil: 0,
+      seenCount,
+      reviewCount,
+      lastReviewedAt: t,
+      longTermGrade: 'easy',
+      updatedAt: t
+    };
+  }
+
+  const daysRaw = momoIntervalDays(current, grade);
+  const days = Math.max(1, Math.min(MOMO_MAX_DAYS, daysRaw));
+  const interval = msFromDays(days);
+  const goodStepIndex = grade === 'good' ? momoGoodStepIndex(current, 'good') : 0;
+  let stability = Number(current.stability) || 0;
+  let difficulty = clamp(Number(current.difficulty) || d, 1, 10);
+  let familiarity = Number(current.familiarity) || 0;
+  let status = 'review';
+  let weakTag = !!current.weakTag;
+  let wrongCount = current.wrongCount || 0;
+  let hardCount = current.hardCount || 0;
+  let lapseCount = current.lapseCount || 0;
 
   if (grade === 'again') {
-    next.wrongCount += 1;
-    next.lapseCount += 1;
-    next.familiarity = clamp((current.familiarity || 20) * 0.35, 5, 45);
-    next.interval = Math.min(next.interval, 3 * MINUTE);
-    next.due = t + next.interval;
-    next.loopCardsLeft = 2;
-    next.buriedUntil = next.due;
-    return next;
+    // G1: S drops hard, short 1-3d interval, mark weak.
+    stability = Math.max(0.5, Math.min(days, (stability || days) * 0.35));
+    difficulty = clamp(difficulty + 1.1, 1, 10);
+    familiarity = clamp((familiarity || 20) * 0.35, 5, 45);
+    status = 'learning';
+    weakTag = true;
+    wrongCount += 1;
+    lapseCount += 1;
+  } else if (grade === 'hard') {
+    // G2: small S growth, 3-7d.
+    stability = Math.max(days * 0.8, (stability || 1) * 0.9 + days * 0.15);
+    difficulty = clamp(difficulty + 0.45, 1, 10);
+    familiarity = clamp((familiarity || 35) * 0.7 + 10, 20, 70);
+    status = 'learning';
+    weakTag = true;
+    wrongCount += 1;
+    hardCount += 1;
+    lapseCount += 1;
+  } else {
+    // G3: steady S growth, exponential step ladder.
+    stability = Math.max(days, (stability || 1) * 1.35 + days * 0.25);
+    difficulty = clamp(difficulty - 0.25, 1, 10);
+    familiarity = 82;
+    status = 'review';
+    if ((current.wrongCount || 0) === 0 && (current.hardCount || 0) === 0) weakTag = false;
   }
 
-  if (grade === 'hard') {
-    next.wrongCount += 1;
-    next.hardCount += 1;
-    next.lapseCount += 1;
-    next.familiarity = clamp((current.familiarity || 35) * 0.65, 20, 65);
-    next.interval = Math.min(next.interval, 15 * MINUTE);
-    next.due = t + next.interval;
-    next.loopCardsLeft = 3;
-    next.buriedUntil = next.due;
-    return next;
-  }
-
-  next.familiarity = grade === 'easy' ? 95 : 82;
-  next.buriedUntil = 0;
-  next.loopCardsLeft = 0;
-  return next;
+  const memoryStage = stageFromStability(Math.max(stability / 30, days / 30));
+  return {
+    ...current,
+    status,
+    masterTag: false,
+    weakTag,
+    stability,
+    difficulty,
+    memoryStage,
+    goodStepIndex,
+    interval,
+    due: t + interval,
+    fsrsState: status === 'learning' ? State.Learning : State.Review,
+    fsrsLearningSteps: 0,
+    familiarity,
+    loopCardsLeft: 0,
+    buriedUntil: 0,
+    wrongCount,
+    hardCount,
+    lapseCount,
+    seenCount,
+    reviewCount,
+    lastReviewedAt: t,
+    longTermGrade: grade,
+    updatedAt: t
+  };
 }
 
 function stageText(stage) {

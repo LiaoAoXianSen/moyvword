@@ -68,8 +68,6 @@ const IN_DAY_AGAIN_INTERVAL = 3 * 60 * 1000;
 const IN_DAY_HARD_INTERVAL = 5 * 60 * 1000;
 const IN_DAY_AGAIN_REPEATS = 3;
 const IN_DAY_HARD_REPEATS = 2;
-// After 不认识/模糊, require several 认识 answers before finishing the plan item.
-const GOOD_AFTER_UNCERTAIN_REQUIRED = 3;
 
 function defaultData() {
   return {
@@ -776,13 +774,17 @@ function dayKeyFromTime(time) {
     const manualNewCount = completedPlanItemsToday('new').filter((item) => item.source !== 'automatic_new').length
       + activePlanItems().filter((item) => item.type === 'new' && item.source !== 'automatic_new').length;
     const roomForNew = Math.max(0, target - reviewCount - manualNewCount);
+    if (roomForNew <= 0) return false;
+    // Momo: high yesterday forget rate shrinks new-word issue; multi-day low forget can slightly raise.
     const yesterday = dayKeyFromTime(startOfToday() - DAY);
     const yesterdayEntries = data.studyLog.filter((entry) => entry.date === yesterday);
-    const yesterdayActions = yesterdayEntries.reduce((sum, entry) => sum + (entry.actions || 0), 0);
+    const yesterdayFirst = yesterdayEntries.reduce((sum, entry) => sum + (entry.newLearned || 0) + (entry.reviewed || 0), 0);
     const yesterdayUncertain = yesterdayEntries.reduce((sum, entry) => sum + (entry.again || 0), 0);
-    const newQuota = yesterdayActions && yesterdayUncertain / yesterdayActions >= 0.35
-      ? Math.floor(roomForNew * 0.5)
-      : roomForNew;
+    const forgetRate = yesterdayFirst > 0 ? yesterdayUncertain / yesterdayFirst : 0;
+    let newQuota = roomForNew;
+    if (yesterdayFirst > 0 && forgetRate >= 0.5) newQuota = Math.floor(roomForNew * 0.35);
+    else if (yesterdayFirst > 0 && forgetRate >= 0.35) newQuota = Math.floor(roomForNew * 0.5);
+    else if (yesterdayFirst >= 12 && forgetRate <= 0.15) newQuota = Math.min(roomForNew + Math.floor(roomForNew * 0.1), target);
     if (newQuota <= 0) return false;
     const plannedIds = new Set(activePlanItems().map((item) => item.wordId));
     const candidates = data.words
@@ -811,17 +813,13 @@ function dayKeyFromTime(time) {
     if (!item) return { completed: false, pendingConfirmation: false };
     const today = todayKey();
     if (grade === 'again' || grade === 'hard') {
+      // Momo: same-day forget/fuzzy keeps the card in today's pool via day-loop only.
       item.uncertainDate = today;
       item.goodAfterUncertainStreak = 0;
       return { completed: false, pendingConfirmation: true };
     }
     if (grade !== 'good' && grade !== 'easy') return { completed: false, pendingConfirmation: false };
-    if (item.uncertainDate === today) {
-      item.goodAfterUncertainStreak = Math.max(0, Number(item.goodAfterUncertainStreak) || 0) + 1;
-      if (item.goodAfterUncertainStreak < GOOD_AFTER_UNCERTAIN_REQUIRED) {
-        return { completed: false, pendingConfirmation: true };
-      }
-    }
+    // G3/G4 finish today's plan item. Manual/history ratings never reach here.
     completePlanItem(wordId);
     return { completed: true, pendingConfirmation: false };
   }
@@ -1006,8 +1004,13 @@ function dayKeyFromTime(time) {
   }
 
   function sortByPriority(a, b) {
+    // Momo queue: weak first, then lower stability (S) first, then earlier due.
     if (hasActiveDayLoop(a) && !hasActiveDayLoop(b)) return -1;
     if (hasActiveDayLoop(b) && !hasActiveDayLoop(a)) return 1;
+    if (!!a.weakTag !== !!b.weakTag) return a.weakTag ? -1 : 1;
+    const stabilityA = Number(a.stability) || 0;
+    const stabilityB = Number(b.stability) || 0;
+    if (stabilityA !== stabilityB) return stabilityA - stabilityB;
     if (a.status === 'learning' && b.status !== 'learning') return -1;
     if (a.status !== 'learning' && b.status === 'learning') return 1;
     const scoreA = priorityScore(a);
@@ -1022,8 +1025,10 @@ function dayKeyFromTime(time) {
     const forgottenRisk = word.status === 'new' ? 0 : (100 - retention) / 20;
     const overdue = Math.min(6, overdueWeight(word));
     const stubborn = Math.min(8, stubbornness(word));
+    const weak = word.weakTag ? 8 : 0;
     const loop = word.status === 'learning' ? 10 : 0;
-    return loop + overdue * 2 + stubborn * 1.4 + forgottenRisk;
+    // Lower stability => higher urgency when inverted into score via forgottenRisk/overdue.
+    return loop + weak + overdue * 2 + stubborn * 1.4 + forgottenRisk + Math.max(0, 20 - (Number(word.stability) || 0));
   }
 
   function hasActiveDayLoop(word) {
@@ -1404,24 +1409,37 @@ function dayKeyFromTime(time) {
         return;
       }
       const beforeStatus = word.status;
+      // Scene 1 only: first cross-day rating of the day updates S / next_review_day.
+      // Scene 2 (same-day reappear) and scene 3 (previous/manual browse) never reach long-term writes.
       const longTermRating = word.longTermRatingDate !== todayKey();
       let rated;
       if (longTermRating) {
         rated = rateWord(word, grade);
-        const nextDay = startOfToday() + DAY;
-        const adjustedInterval = Math.max(0, (rated.due || nextDay) - now());
-        const difficultyFactor = 5 / Math.max(1, Number(rated.wordDifficulty || word.wordDifficulty) || 5);
-        const memoryAdjusted = Math.max(DAY, Math.round(adjustedInterval * data.settings.userMemoryCoeff * difficultyFactor));
+        if (grade !== 'easy' && rated.status !== 'done') {
+          const baseDays = Math.max(1, Math.round((Number(rated.interval) || DAY) / DAY));
+          const coeff = Math.max(0.7, Math.min(1.3, Number(data.settings.userMemoryCoeff) || 1));
+          const adjustedDays = Math.max(1, Math.min(365, Math.round(baseDays * coeff)));
+          rated = {
+            ...rated,
+            interval: adjustedDays * DAY,
+            due: now() + adjustedDays * DAY,
+            stability: Math.max(Number(rated.stability) || 0, adjustedDays),
+            buriedUntil: 0,
+            loopCardsLeft: 0
+          };
+        }
         rated = {
           ...rated,
-          interval: memoryAdjusted,
-          due: now() + memoryAdjusted,
-          buriedUntil: 0,
-          loopCardsLeft: 0,
           longTermRatingDate: todayKey(),
-          longTermGrade: grade
+          longTermGrade: grade,
+          dayLoopDate: '',
+          dayLoopDue: 0,
+          dayLoopCardsBefore: 0,
+          dayLoopPriority: 0,
+          dayLoopRemaining: 0
         };
       } else if (grade === 'again' || grade === 'hard') {
+        // Scene 2: only in-day order/priority, future schedule untouched.
         rated = scheduleInDayLoop(word, grade);
       } else {
         rated = {
@@ -1437,24 +1455,23 @@ function dayKeyFromTime(time) {
       const idx = data.words.findIndex((w) => w.id === word.id);
       data.words[idx] = rated;
       if (longTermRating && beforeStatus === 'new') data.session.newLearned += 1;
-      if (longTermRating && beforeStatus !== 'new') data.session.reviewed += 1;
+      if (longTermRating && beforeStatus !== 'new' && beforeStatus !== 'done') data.session.reviewed += 1;
       if (longTermRating && (grade === 'again' || grade === 'hard')) data.session.again += 1;
       const progress = activeBookProgress();
       if (longTermRating && beforeStatus === 'new') progress.newLearned += 1;
-      if (longTermRating && beforeStatus !== 'new') progress.reviewed += 1;
+      if (longTermRating && beforeStatus !== 'new' && beforeStatus !== 'done') progress.reviewed += 1;
       if (longTermRating && (grade === 'again' || grade === 'hard')) progress.again += 1;
       recordBookProgress(progress);
       recordStudyEvent(beforeStatus, grade, longTermRating);
       if (longTermRating) refreshUserMemoryCoeff();
       const planResult = recordPlanItemRating(word.id, grade);
-      if (planResult.pendingConfirmation) {
-        // Keep uncertain words in the day loop until they get enough 认识 confirmations.
-        const loopGrade = (grade === 'again' || grade === 'hard') ? grade : 'hard';
-        rated = scheduleInDayLoop(rated, loopGrade, true);
+      if ((grade === 'again' || grade === 'hard') && planResult.pendingConfirmation) {
+        rated = scheduleInDayLoop(rated, grade, true);
         data.words[idx] = rated;
       }
-      if (planResult.completed) {
+      if (planResult.completed || rated.status === 'done') {
         removeFromLearningWindow(word.id);
+        if (rated.status === 'done') cancelActivePlanItems(word.id);
       }
       tickSmallLoops(word.id);
       fillLearningWindow();
