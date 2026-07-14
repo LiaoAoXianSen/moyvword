@@ -46,3 +46,11 @@
 - 已修复手动查看上一词后的返回路径：`src/store.js` 用 `session.manualReturnId` 保存原当前词；“下一个”及评分会优先返回该词，删除词时清理失效 ID。
 - 验证通过：`node --check src/store.js`，临时数据场景覆盖“上一词 → 下一个”和“上一词 → 认识”。
 - 已升级至 v53 / 0.1.5；`npm run dist` 成功生成 `dist/摸鱼单词v53版本.exe`，并已同步到 `release/摸鱼单词v53版本.exe`。
+- 正在修复评分或跳过上一词后的历史链：原因是返回原词时没有将手动查看词恢复到历史栈。
+- 已修复并用临时数据验证连续“上一词 → 评分/跳过 → 返回 → 再上一词”顺序；v54 / 0.1.6 的便携版构建成功。
+- 发布同步第一次尝试未找到预期的 `dist/摸鱼单词v54版本.exe`；正在定位 Electron Builder 实际写入的 EXE 路径后改用该路径同步。
+- 第二次构建尝试因缩写配置参数被解析为配置文件而报 `ENOENT`，尚未开始打包；下一步改查构建器长参数语法后重新输出到发布目录。
+- 使用正确的 `--config.directories.output=release` 后构建器仍显示 portable 构建完成，但 EXE 随即缺失；`release/win-unpacked` 完整。已连续出现三次，暂不发布不完整产物，等待安全软件放行。
+- v55：彻底拆分浏览导航与学习调度。新增 `src/navigation.js`（trail + index + liveWordId + mode），`fillLearningWindow/getState` 不再改导航；评分后上一词/下一词顺序已用 `scripts/test-navigation.js` 锁定。
+- v56 / 0.1.8：恢复点系统上线。`data/snapshots/` 保存每日自动、手动、恢复前快照；设置页可创建/列表/恢复；恢复前二次确认并自动再备份。`scripts/test-snapshots.js` 与导航测试通过；产物 `dist/摸鱼单词v56版本.exe`。今日学习数据未回滚。
+- v57 / 0.1.9：修复每日恢复点重复创建（dayKey 去重），收紧保留：每日7/手动8/恢复前5；清理已有同日重复。
