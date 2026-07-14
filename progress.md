@@ -54,3 +54,4 @@
 - v55：彻底拆分浏览导航与学习调度。新增 `src/navigation.js`（trail + index + liveWordId + mode），`fillLearningWindow/getState` 不再改导航；评分后上一词/下一词顺序已用 `scripts/test-navigation.js` 锁定。
 - v56 / 0.1.8：恢复点系统上线。`data/snapshots/` 保存每日自动、手动、恢复前快照；设置页可创建/列表/恢复；恢复前二次确认并自动再备份。`scripts/test-snapshots.js` 与导航测试通过；产物 `dist/摸鱼单词v56版本.exe`。今日学习数据未回滚。
 - v57 / 0.1.9：修复每日恢复点重复创建（dayKey 去重），收紧保留：每日7/手动8/恢复前5；清理已有同日重复。
+- v58 / 0.1.10：横条外观设置上线。设置页可调整横条长度、背景透明度和主文字颜色；主进程实时调整窗口宽度，横条 renderer 通过 CSS 变量应用外观。语法检查、导航/恢复点回归测试通过；`npm run dist` 生成 `dist/摸鱼单词v58版本.exe`。
