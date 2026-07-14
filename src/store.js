@@ -68,6 +68,8 @@ const IN_DAY_AGAIN_INTERVAL = 3 * 60 * 1000;
 const IN_DAY_HARD_INTERVAL = 5 * 60 * 1000;
 const IN_DAY_AGAIN_REPEATS = 3;
 const IN_DAY_HARD_REPEATS = 2;
+// After 不认识/模糊, require several 认识 answers before finishing the plan item.
+const GOOD_AFTER_UNCERTAIN_REQUIRED = 3;
 
 function defaultData() {
   return {
@@ -251,6 +253,7 @@ function dayKeyFromTime(time) {
     return (Array.isArray(items) ? items : [])
       .map((item, index) => {
         const uncertainDate = String(item.uncertainDate || '');
+        const keepUncertain = uncertainDate === today;
         return {
           id: String(item.id || `plan-${item.wordId || index}-${item.addedAt || now()}`),
           wordId: String(item.wordId || ''),
@@ -260,8 +263,10 @@ function dayKeyFromTime(time) {
           addedDate: item.addedDate || today,
           addedAt: Number(item.addedAt) || now(),
           completedAt: Number(item.completedAt) || 0,
-          uncertainDate: uncertainDate === today ? uncertainDate : '',
-          goodAfterUncertainStreak: 0
+          uncertainDate: keepUncertain ? uncertainDate : '',
+          goodAfterUncertainStreak: keepUncertain
+            ? Math.max(0, Math.floor(Number(item.goodAfterUncertainStreak) || 0))
+            : 0
         };
       })
       .filter((item) => item.wordId);
@@ -811,6 +816,12 @@ function dayKeyFromTime(time) {
       return { completed: false, pendingConfirmation: true };
     }
     if (grade !== 'good' && grade !== 'easy') return { completed: false, pendingConfirmation: false };
+    if (item.uncertainDate === today) {
+      item.goodAfterUncertainStreak = Math.max(0, Number(item.goodAfterUncertainStreak) || 0) + 1;
+      if (item.goodAfterUncertainStreak < GOOD_AFTER_UNCERTAIN_REQUIRED) {
+        return { completed: false, pendingConfirmation: true };
+      }
+    }
     completePlanItem(wordId);
     return { completed: true, pendingConfirmation: false };
   }
@@ -1403,8 +1414,10 @@ function dayKeyFromTime(time) {
       recordStudyEvent(beforeStatus, grade, longTermRating);
       if (longTermRating) refreshUserMemoryCoeff();
       const planResult = recordPlanItemRating(word.id, grade);
-      if ((grade === 'again' || grade === 'hard') && planResult.pendingConfirmation) {
-        rated = scheduleInDayLoop(rated, grade, true);
+      if (planResult.pendingConfirmation) {
+        // Keep uncertain words in the day loop until they get enough 认识 confirmations.
+        const loopGrade = (grade === 'again' || grade === 'hard') ? grade : 'hard';
+        rated = scheduleInDayLoop(rated, loopGrade, true);
         data.words[idx] = rated;
       }
       if (planResult.completed) {
