@@ -296,3 +296,32 @@ body.is-expanded .strip {
   border-color: oklch(0.84 0.024 220);
   background: oklch(0.996 0.002 220 / calc(var(--strip-opacity, 0.93) * 0.92));
 }
+
+body.is-expanded .details {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 28px);
+  min-height: 0;
+}
+
+.details-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  -webkit-app-region: no-drag;
+}
+
+#meaning,
+#sentence {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.rating-actions {
+  flex: 0 0 auto;
+}

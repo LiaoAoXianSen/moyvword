@@ -749,8 +749,8 @@ function dayKeyFromTime(time) {
     data.session.planDate = today;
     data.session.planCompletionToken = '';
 
-    // Due reviews are included first. Automatic new words are filled lazily after reviews,
-    // so manual additions during review can consume the new-word room without replacing words.
+    // Due reviews are included automatically. New words only enter the plan
+    // through explicit user actions, even when the daily target still has room.
     dueReviewPool().forEach((word) => {
       data.session.planItems.push(makePlanItem(word, 'review', 'initial_due'));
     });
@@ -759,45 +759,21 @@ function dayKeyFromTime(time) {
     return true;
   }
 
-  function automaticNewPlanExists() {
-    return data.session.planItems.some((item) => item.addedDate === todayKey()
-      && item.type === 'new'
-      && item.source === 'automatic_new');
-  }
-
-  function fillAutomaticNewPlan() {
+  function cleanupAutomaticNewPlan() {
     ensureDailyPlan();
-    if (automaticNewPlanExists()) return false;
-    if (activePlanItems().some((item) => item.type === 'review')) return false;
-    const target = Math.max(0, Number(data.settings.dailyNew) || 0);
-    const reviewCount = completedPlanItemsToday('review').length + activePlanItems().filter((item) => item.type === 'review').length;
-    const manualNewCount = completedPlanItemsToday('new').filter((item) => item.source !== 'automatic_new').length
-      + activePlanItems().filter((item) => item.type === 'new' && item.source !== 'automatic_new').length;
-    const roomForNew = Math.max(0, target - reviewCount - manualNewCount);
-    if (roomForNew <= 0) return false;
-    // Momo: high yesterday forget rate shrinks new-word issue; multi-day low forget can slightly raise.
-    const yesterday = dayKeyFromTime(startOfToday() - DAY);
-    const yesterdayEntries = data.studyLog.filter((entry) => entry.date === yesterday);
-    const yesterdayFirst = yesterdayEntries.reduce((sum, entry) => sum + (entry.newLearned || 0) + (entry.reviewed || 0), 0);
-    const yesterdayUncertain = yesterdayEntries.reduce((sum, entry) => sum + (entry.again || 0), 0);
-    const forgetRate = yesterdayFirst > 0 ? yesterdayUncertain / yesterdayFirst : 0;
-    let newQuota = roomForNew;
-    if (yesterdayFirst > 0 && forgetRate >= 0.5) newQuota = Math.floor(roomForNew * 0.35);
-    else if (yesterdayFirst > 0 && forgetRate >= 0.35) newQuota = Math.floor(roomForNew * 0.5);
-    else if (yesterdayFirst >= 12 && forgetRate <= 0.15) newQuota = Math.min(roomForNew + Math.floor(roomForNew * 0.1), target);
-    if (newQuota <= 0) return false;
-    const plannedIds = new Set(activePlanItems().map((item) => item.wordId));
-    const candidates = data.words
-      .filter((word) => word.status === 'new' && wordInBook(word, data.settings.activeBookId) && !plannedIds.has(word.id))
-      .sort((a, b) => a.word.localeCompare(b.word, 'en'))
-      .slice(0, newQuota);
-    if (!candidates.length) return false;
-    candidates.forEach((word) => {
-      data.session.planItems.push(makePlanItem(word, 'new', 'automatic_new'));
+    const before = data.session.planItems.length;
+    data.session.planItems = data.session.planItems.filter((item) => {
+      if (item.addedDate !== todayKey() || item.type !== 'new' || item.source !== 'automatic_new') return true;
+      if (item.status === 'completed') return true;
+      const word = findWord(item.wordId);
+      return word && hasLearningRecord(word);
     });
-    resetLearningWindow();
-    save();
-    return true;
+    const removed = data.session.planItems.length !== before;
+    if (removed) {
+      resetLearningWindow();
+      save();
+    }
+    return removed;
   }
 
   function completePlanItem(wordId) {
@@ -900,7 +876,7 @@ function dayKeyFromTime(time) {
 
   function planSnapshot() {
     ensureDailyPlan();
-    fillAutomaticNewPlan();
+    cleanupAutomaticNewPlan();
     const items = activePlanItems();
     const activeNew = items.filter((item) => item.type === 'new');
     const activeReview = items.filter((item) => item.type === 'review');
@@ -1107,7 +1083,7 @@ function dayKeyFromTime(time) {
   function learningWindow() {
     refreshDailySession();
     ensureDailyPlan();
-    fillAutomaticNewPlan();
+    cleanupAutomaticNewPlan();
     if (data.session.windowDate !== todayKey()) resetLearningWindow();
 
     const validIds = activePlanWordIds();
