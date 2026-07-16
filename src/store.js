@@ -68,6 +68,8 @@ const IN_DAY_AGAIN_INTERVAL = 3 * 60 * 1000;
 const IN_DAY_HARD_INTERVAL = 5 * 60 * 1000;
 const IN_DAY_AGAIN_REPEATS = 3;
 const IN_DAY_HARD_REPEATS = 2;
+// After again/hard, require this many consecutive good/easy ratings before the plan item completes.
+const GOODS_AFTER_UNCERTAIN_TO_COMPLETE = 3;
 
 function defaultData() {
   return {
@@ -576,6 +578,16 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       .filter(isPlanItemConsistent)
       .filter((item) => item.status !== 'cancelled')
       .filter((item) => item.status !== 'completed' || item.completedAt >= cutoff);
+    // One word should only contribute one completed plan record per day.
+    data.session.planItems = dedupeCompletedPlanItemsSameDay(data.session.planItems);
+    // If a word already finished today, drop any leftover pending/studying rows.
+    const completedTodayIds = completedPlanWordIdsToday();
+    if (completedTodayIds.size) {
+      data.session.planItems = data.session.planItems.filter((item) => {
+        if (item.status === 'completed' || item.status === 'cancelled') return true;
+        return !completedTodayIds.has(item.wordId);
+      });
+    }
     return before !== data.session.planItems.length;
   }
 
@@ -588,8 +600,58 @@ function repairMisplacedAgainSchedules(words, at = now()) {
     });
   }
 
+  // Stats / review sources count unique words, not duplicate plan rows.
+  function uniqueCompletedPlanItemsToday(type) {
+    const seen = new Set();
+    const unique = [];
+    completedPlanItemsToday()
+      .slice()
+      .sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0) || (a.addedAt || 0) - (b.addedAt || 0))
+      .forEach((item) => {
+        if (seen.has(item.wordId)) return;
+        seen.add(item.wordId);
+        unique.push(item);
+      });
+    return type ? unique.filter((item) => item.type === type) : unique;
+  }
+
+  function completedPlanWordIdsToday() {
+    return new Set(uniqueCompletedPlanItemsToday().map((item) => item.wordId));
+  }
+
+  function dedupeCompletedPlanItemsSameDay(items) {
+    const list = Array.isArray(items) ? items : [];
+    const bestCompleted = new Map();
+    list.forEach((item, index) => {
+      if (item.status !== 'completed' || !item.completedAt) return;
+      const day = dayKeyFromTime(item.completedAt);
+      const key = `${day}::${item.wordId}`;
+      const prev = bestCompleted.get(key);
+      if (!prev) {
+        bestCompleted.set(key, { item, index });
+        return;
+      }
+      const prevTime = prev.item.completedAt || 0;
+      const nextTime = item.completedAt || 0;
+      // Keep the earliest completion that day; drop later duplicates.
+      if (nextTime < prevTime || (nextTime === prevTime && index < prev.index)) {
+        bestCompleted.set(key, { item, index });
+      }
+    });
+    const drop = new Set();
+    list.forEach((item, index) => {
+      if (item.status !== 'completed' || !item.completedAt) return;
+      const day = dayKeyFromTime(item.completedAt);
+      const key = `${day}::${item.wordId}`;
+      const keep = bestCompleted.get(key);
+      if (!keep || keep.index !== index) drop.add(index);
+    });
+    if (!drop.size) return list;
+    return list.filter((_item, index) => !drop.has(index));
+  }
+
   function todayReviewSourceItems() {
-    return completedPlanItemsToday()
+    return uniqueCompletedPlanItemsToday()
       .slice()
       .sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
   }
@@ -765,15 +827,16 @@ function repairMisplacedAgainSchedules(words, at = now()) {
 
   function remainingPlanCapacity() {
     const target = Math.max(0, Math.floor(Number(data.settings.dailyNew) || 0));
-    const completed = completedPlanItemsToday().length;
+    const completed = uniqueCompletedPlanItemsToday().length;
     const active = activePlanItems().length;
     return Math.max(0, target - completed - active);
   }
 
   function dueReviewPool(t = now()) {
     const activeIds = activePlanWordIds();
+    const completedToday = completedPlanWordIdsToday();
     return data.words
-      .filter((word) => isReviewableWord(word) && isReadyForStudy(word, t) && !activeIds.has(word.id))
+      .filter((word) => isReviewableWord(word) && isReadyForStudy(word, t) && !activeIds.has(word.id) && !completedToday.has(word.id))
       .sort(sortByPriority);
   }
 
@@ -838,18 +901,60 @@ function repairMisplacedAgainSchedules(words, at = now()) {
 
   function recordPlanItemRating(wordId, grade) {
     const item = planItemForWord(wordId);
-    if (!item) return { completed: false, pendingConfirmation: false };
+    if (!item) return { completed: false, pendingConfirmation: false, streak: 0, needed: 0 };
     const today = todayKey();
     if (grade === 'again' || grade === 'hard') {
-      // Momo: same-day forget/fuzzy keeps the card in today's pool via day-loop only.
+      // Forget/fuzzy: stay in today's plan, clear confirmation progress, re-enter day-loop.
       item.uncertainDate = today;
       item.goodAfterUncertainStreak = 0;
-      return { completed: false, pendingConfirmation: true };
+      return {
+        completed: false,
+        pendingConfirmation: true,
+        streak: 0,
+        needed: GOODS_AFTER_UNCERTAIN_TO_COMPLETE
+      };
     }
-    if (grade !== 'good' && grade !== 'easy') return { completed: false, pendingConfirmation: false };
-    // G3/G4 finish today's plan item. Manual/history ratings never reach here.
+    if (grade !== 'good' && grade !== 'easy') {
+      return { completed: false, pendingConfirmation: false, streak: 0, needed: 0 };
+    }
+
+    // 熟知 always finishes the plan item.
+    if (grade === 'easy') {
+      item.uncertainDate = '';
+      item.goodAfterUncertainStreak = 0;
+      completePlanItem(wordId);
+      return { completed: true, pendingConfirmation: false, streak: 0, needed: 0 };
+    }
+
+    // Clean first-pass 认识 (never uncertain today) finishes immediately.
+    const needsConfirm = item.uncertainDate === today;
+    if (!needsConfirm) {
+      item.goodAfterUncertainStreak = 0;
+      completePlanItem(wordId);
+      return { completed: true, pendingConfirmation: false, streak: 0, needed: 0 };
+    }
+
+    // After 不认识/模糊: need consecutive 认识. Any later 不认识/模糊 resets to 0.
+    const streak = Math.max(0, Math.floor(Number(item.goodAfterUncertainStreak) || 0)) + 1;
+    item.goodAfterUncertainStreak = streak;
+    if (streak < GOODS_AFTER_UNCERTAIN_TO_COMPLETE) {
+      return {
+        completed: false,
+        pendingConfirmation: true,
+        streak,
+        needed: GOODS_AFTER_UNCERTAIN_TO_COMPLETE
+      };
+    }
+
+    item.uncertainDate = '';
+    item.goodAfterUncertainStreak = 0;
     completePlanItem(wordId);
-    return { completed: true, pendingConfirmation: false };
+    return {
+      completed: true,
+      pendingConfirmation: false,
+      streak,
+      needed: GOODS_AFTER_UNCERTAIN_TO_COMPLETE
+    };
   }
 
   function scheduleInDayLoop(word, grade, resetRepeats = false) {
@@ -864,6 +969,23 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       dayLoopDue: remaining > 0 ? t + (isAgain ? IN_DAY_AGAIN_INTERVAL : IN_DAY_HARD_INTERVAL) : 0,
       dayLoopCardsBefore: remaining > 0 ? (isAgain ? 2 : 1) : 0,
       dayLoopPriority: remaining > 0 ? (isAgain ? 3 : 2) : 0,
+      dayLoopRemaining: remaining,
+      updatedAt: t
+    };
+  }
+
+  // After again/hard, each confirming 认识 must reappear today until streak is full.
+  function scheduleConfirmationLoop(word, planResult = {}) {
+    const t = now();
+    const needed = Math.max(1, Number(planResult.needed) || GOODS_AFTER_UNCERTAIN_TO_COMPLETE);
+    const streak = Math.max(0, Number(planResult.streak) || 0);
+    const remaining = Math.max(1, needed - streak);
+    return {
+      ...word,
+      dayLoopDate: todayKey(),
+      dayLoopDue: t + IN_DAY_HARD_INTERVAL,
+      dayLoopCardsBefore: 1,
+      dayLoopPriority: 2,
       dayLoopRemaining: remaining,
       updatedAt: t
     };
@@ -885,13 +1007,14 @@ function repairMisplacedAgainSchedules(words, at = now()) {
     ensureDailyPlan();
     const ids = new Set((Array.isArray(wordIds) ? wordIds : []).map(String));
     const existing = activePlanWordIds();
+    const completedToday = completedPlanWordIdsToday();
     const manualAdd = source !== 'automatic_new';
     const capacity = manualAdd ? Number.POSITIVE_INFINITY : remainingPlanCapacity();
     let added = 0;
     if (capacity <= 0) return { added, plan: planSnapshot() };
     data.words.forEach((word) => {
       if (added >= capacity) return;
-      if (!ids.has(word.id) || existing.has(word.id)) return;
+      if (!ids.has(word.id) || existing.has(word.id) || completedToday.has(word.id)) return;
       if (type === 'new' && word.status !== 'new') return;
       if (type === 'new' && !wordInBook(word, data.settings.activeBookId)) return;
       if (type === 'review' && !isReviewableWord(word)) return;
@@ -932,9 +1055,9 @@ function repairMisplacedAgainSchedules(words, at = now()) {
     const items = activePlanItems();
     const activeNew = items.filter((item) => item.type === 'new');
     const activeReview = items.filter((item) => item.type === 'review');
-    const completedNew = completedPlanItemsToday('new');
-    const completedReview = completedPlanItemsToday('review');
-    const completed = completedNew.length + completedReview.length;
+    const completedNew = uniqueCompletedPlanItemsToday('new');
+    const completedReview = uniqueCompletedPlanItemsToday('review');
+    const completed = uniqueCompletedPlanItemsToday().length;
     const carried = items.filter((item) => item.addedDate !== todayKey()).length;
     const dueLeft = dueReviewPool().length;
     const availableNew = availableNewWords().length;
@@ -1493,11 +1616,28 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       recordStudyEvent(beforeStatus, grade, longTermRating);
       if (longTermRating) refreshUserMemoryCoeff();
       const planResult = recordPlanItemRating(word.id, grade);
-      if ((grade === 'again' || grade === 'hard') && planResult.pendingConfirmation) {
-        rated = scheduleInDayLoop(rated, grade, true);
+      if (planResult.pendingConfirmation) {
+        if (grade === 'again' || grade === 'hard') {
+          // Reset confirmation progress and re-enter short loop.
+          rated = scheduleInDayLoop(rated, grade, true);
+        } else if (grade === 'good') {
+          // Partial confirmation: keep the card in today's loop so the next goods can happen.
+          rated = scheduleConfirmationLoop(rated, planResult);
+        }
         data.words[idx] = rated;
       }
       if (planResult.completed || rated.status === 'done') {
+        // Finished today's plan item (or mastered): leave the learning window.
+        rated = {
+          ...rated,
+          dayLoopDate: '',
+          dayLoopDue: 0,
+          dayLoopCardsBefore: 0,
+          dayLoopPriority: 0,
+          dayLoopRemaining: 0,
+          updatedAt: now()
+        };
+        data.words[idx] = rated;
         removeFromLearningWindow(word.id);
         if (rated.status === 'done') cancelActivePlanItems(word.id);
       }
