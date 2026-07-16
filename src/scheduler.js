@@ -120,28 +120,25 @@ function safeNumber(value, fallback, min = 0) {
   return Number.isFinite(value) ? Math.max(min, value) : fallback;
 }
 
-// Momo-style cross-day intervals (days). Only first rating of the day uses these.
-const MOMO_GOOD_STEPS = [7, 15, 30, 60, 90, 120, 180, 365];
+// Cross-day intervals (days). Only the first formal rating of the day uses these.
+// again = next-day must-return; hard stays short; good starts short then ladders up.
+const MOMO_GOOD_STEPS = [1, 3, 7, 15, 30, 60, 90, 120, 180, 365];
 const MOMO_MAX_DAYS = 365;
 
 function wordStaticDifficulty(current) {
   return clamp(Number(current.wordDifficulty) || estimateWordDifficulty(current.word) || 5, 1, 10);
 }
 
-function momoAgainDays(current) {
-  // G1 forget: 1-3 days; harder words return sooner.
-  const d = wordStaticDifficulty(current);
-  if (d >= 7.5) return 1;
-  if (d >= 4.5) return 2;
-  return 3;
+function momoAgainDays(_current) {
+  // G1 forget: always return the next day. Weak words must not be deferred further.
+  return 1;
 }
 
 function momoHardDays(current) {
-  // G2 fuzzy: 3-7 days.
+  // G2 fuzzy: 2-3 days; harder words return sooner.
   const d = wordStaticDifficulty(current);
-  if (d >= 7.5) return 3;
-  if (d >= 4.5) return 5;
-  return 7;
+  if (d >= 7.5) return 2;
+  return 3;
 }
 
 function momoGoodStepIndex(current, grade) {

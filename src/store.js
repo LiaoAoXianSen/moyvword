@@ -71,7 +71,7 @@ const IN_DAY_HARD_REPEATS = 2;
 
 function defaultData() {
   return {
-    version: 8,
+    version: 9,
     settings: {
       dailyNew: 20,
       learningWindowSize: 15,
@@ -143,6 +143,47 @@ function dayKeyFromTime(time) {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+function startOfDayFromTime(time) {
+  const date = new Date(Number(time) || now());
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+// One-shot repair for the old "again = 1-3 day defer" schedule.
+// Weak cards should already be due (or due tomorrow at latest if rated today).
+function repairMisplacedAgainSchedules(words, at = now()) {
+  const list = Array.isArray(words) ? words : [];
+  let changed = 0;
+  const nextWords = list.map((word) => {
+    const current = normalizeWord(word);
+    if (current.status === 'new' || current.status === 'done') return current;
+    if (String(current.longTermGrade || '') !== 'again') return current;
+    if (!(current.due > 0) || !(current.lastReviewedAt > 0)) return current;
+
+    const ratedDayStart = startOfDayFromTime(current.lastReviewedAt);
+    // Next calendar day after the again rating; never later than "now" for overdue catch-up.
+    const nextDayDue = Math.min(at, ratedDayStart + DAY);
+    if ((current.due || 0) <= nextDayDue) return current;
+
+    changed += 1;
+    return {
+      ...current,
+      due: nextDayDue,
+      interval: Math.max(DAY, Number(current.interval) || DAY),
+      stability: Math.min(Math.max(Number(current.stability) || 1, 0.5), 3),
+      status: 'learning',
+      weakTag: true,
+      dayLoopDate: '',
+      dayLoopDue: 0,
+      dayLoopCardsBefore: 0,
+      dayLoopPriority: 0,
+      dayLoopRemaining: 0,
+      updatedAt: at
+    };
+  });
+  return { words: nextWords, changed };
+}
+
   async function createStore(dataPaths) {
   const persistence = await createPersistence(dataPaths, defaultData());
   const loaded = persistence.loadData();
@@ -169,7 +210,8 @@ function dayKeyFromTime(time) {
     if (Number(raw.version || 0) < 5 && raw.settings && raw.settings.autoSpeak === false) {
       normalized.settings.autoSpeak = true;
     }
-    normalized.version = 8;
+    const previousVersion = Number(raw.version || 0);
+    normalized.version = 9;
     if (!normalized.session.date) normalized.session.date = todayKey();
     if (!normalized.session.bookProgress || typeof normalized.session.bookProgress !== 'object') normalized.session.bookProgress = {};
     if (!Array.isArray(normalized.session.windowIds)) normalized.session.windowIds = [];
@@ -190,6 +232,16 @@ function dayKeyFromTime(time) {
       normalized.settings.activeBookId = normalized.books[0].id;
     }
     normalized.words = normalized.words.map((word) => normalizeWordBooks(normalizeDailyLoop(word), normalized.settings.activeBookId));
+    // v9: again is always next-day. Pull legacy again cards that were deferred 2-3+ days
+    // back onto the next-day track, and rebuild today's due plan once.
+    if (previousVersion < 9) {
+      const repaired = repairMisplacedAgainSchedules(normalized.words);
+      normalized.words = repaired.words;
+      if (repaired.changed) {
+        normalized.session.planDate = '';
+        normalized.session.windowIds = [];
+      }
+    }
     normalized.navigation = migrateNavigation(raw.navigation || normalized.navigation, {
       currentId: raw.currentId || normalized.currentId,
       history: Array.isArray(raw.history) ? raw.history : normalized.history,
