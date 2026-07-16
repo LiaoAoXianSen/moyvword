@@ -235,9 +235,11 @@ npm install
 npm run dist
 ```
 
+- **默认交付流程（用户已确认）：** 功能改完后默认执行验证 → `git commit` → 版本递增 → `npm run dist` → 同步 `release/`，无需每次再问“要不要提交打包”。仅当用户明确说先别提交/先别打包、或只在讨论方案时跳过。
 - 构建配置在 `package.json`。
-- 每次发布先按递增版本更新 `build.artifactName`，例如 v44 后发布 v45。
+- 每次发布先按递增版本更新 `package.json` 的 `version`、`build.productName`、`build.artifactName`，并同步 `src/main.js`、`src/app.html`、`src/strip.html` 中的显示名，例如 v64 后发布 v65。
 - 产物写入 `dist`；只保留最终 EXE 即可，`dist/win-unpacked` 是可再生成目录。
+- 打包成功后把 `dist/摸鱼单词vN版本.exe` 复制到 `release/`。
 - `dist` 和 `release` 中版本化 EXE 只保留最新 5 个，避免误用旧包。
 - 正在运行的 EXE 可能锁定文件，因此不要覆盖旧版发布包。
 
