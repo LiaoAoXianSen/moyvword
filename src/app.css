@@ -919,17 +919,57 @@ dialog.settings::backdrop {
   gap: 8px;
 }
 
+.lookup-result-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
 .lookup-result-head strong {
   font-size: 16px;
 }
 
-.lookup-result-head span,
+.lookup-result-phonetic,
 .lookup-result p,
 #lookupNotice {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.55;
+}
+
+.lookup-status {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.lookup-status.is-studied {
+  color: oklch(0.42 0.1 250);
+  background: oklch(0.93 0.04 250);
+}
+
+.lookup-status.is-mastered {
+  color: oklch(0.4 0.1 155);
+  background: oklch(0.93 0.04 155);
+}
+
+.lookup-status.is-planned {
+  color: oklch(0.42 0.1 205);
+  background: oklch(0.93 0.05 205);
+}
+
+.lookup-status.is-new {
+  color: var(--muted);
+  background: oklch(0.96 0.01 220);
 }
 
 .lookup-result-actions {

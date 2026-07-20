@@ -686,15 +686,34 @@ function renderLookupResults(result) {
     ? (isLocal ? `当前词本找到 ${result.total} 个匹配词。` : '当前词本没有匹配词，以下为在线词典结果。')
     : '没有找到匹配词。';
   byId('lookupResults').replaceChildren(...lookupRecords.map((record, index) => {
+    const studied = !!(record.hasLearningRecord
+      || record.status === 'done'
+      || (record.status && record.status !== 'new')
+      || (Number(record.reviewCount) || 0) > 0
+      || (Number(record.lastReviewedAt) || 0) > 0);
+    const statusText = record.inTodayPlan
+      ? '今日已加入'
+      : (record.status === 'done' || record.masterTag)
+        ? '已掌握'
+        : studied
+          ? '已背诵'
+          : '未背过';
     const row = document.createElement('article');
     row.className = 'lookup-result';
     const head = document.createElement('div');
     head.className = 'lookup-result-head';
+    const title = document.createElement('div');
+    title.className = 'lookup-result-title';
     const word = document.createElement('strong');
     word.textContent = record.word;
+    const status = document.createElement('span');
+    status.className = `lookup-status is-${statusText === '已背诵' ? 'studied' : statusText === '已掌握' ? 'mastered' : statusText === '今日已加入' ? 'planned' : 'new'}`;
+    status.textContent = statusText;
+    title.append(word, status);
     const phonetic = document.createElement('span');
+    phonetic.className = 'lookup-result-phonetic';
     phonetic.textContent = record.phonetic || '无音标';
-    head.append(word, phonetic);
+    head.append(title, phonetic);
     const meaning = document.createElement('p');
     meaning.textContent = record.meaning || '暂无释义';
     const sentence = document.createElement('p');
@@ -714,10 +733,10 @@ function renderLookupResults(result) {
     if (record.inTodayPlan) {
       addToPlan.textContent = '已加入';
       addToPlan.disabled = true;
-    } else if (record.status === 'done') {
+    } else if (record.status === 'done' || record.masterTag) {
       addToPlan.textContent = '已掌握';
       addToPlan.disabled = true;
-    } else if (record.hasLearningRecord || (record.status && record.status !== 'new')) {
+    } else if (studied) {
       addToPlan.dataset.lookupAction = 'plan';
       addToPlan.dataset.index = String(index);
       addToPlan.textContent = '加入今日复习';

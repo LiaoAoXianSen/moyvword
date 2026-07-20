@@ -12,16 +12,35 @@ function focusSearch(select = false) {
   }, 0);
 }
 
+function isStudiedRecord(record) {
+  return !!(record && (
+    record.hasLearningRecord
+    || record.status === 'done'
+    || (record.status && record.status !== 'new')
+    || (Number(record.reviewCount) || 0) > 0
+    || (Number(record.lastReviewedAt) || 0) > 0
+  ));
+}
+
+function statusLabelFor(record) {
+  if (!record) return '';
+  if (record.inTodayPlan) return '今日已加入';
+  if (record.status === 'done' || record.masterTag) return '已掌握';
+  if (isStudiedRecord(record)) return '已背诵';
+  return '未背过';
+}
+
 function planButtonFor(record, index) {
   const button = document.createElement('button');
   button.type = 'button';
   if (record.inTodayPlan) {
     button.textContent = '已加入';
     button.disabled = true;
-  } else if (record.status === 'done') {
+  } else if (record.status === 'done' || record.masterTag) {
     button.textContent = '已掌握';
     button.disabled = true;
-  } else if (record.hasLearningRecord || (record.status && record.status !== 'new')) {
+  } else if (isStudiedRecord(record)) {
+    // Already studied before: still allow adding to today's review, but keep the badge separate.
     button.dataset.lookupAction = 'plan';
     button.dataset.index = String(index);
     button.textContent = '加入今日复习';
@@ -44,11 +63,19 @@ function renderLookupResults(result) {
     row.className = 'lookup-result';
     const head = document.createElement('div');
     head.className = 'lookup-result-head';
+    const title = document.createElement('div');
+    title.className = 'lookup-result-title';
     const word = document.createElement('strong');
     word.textContent = record.word;
+    const status = document.createElement('span');
+    const statusText = statusLabelFor(record);
+    status.className = `lookup-status is-${statusText === '已背诵' ? 'studied' : statusText === '已掌握' ? 'mastered' : statusText === '今日已加入' ? 'planned' : 'new'}`;
+    status.textContent = statusText;
+    title.append(word, status);
     const phonetic = document.createElement('span');
+    phonetic.className = 'lookup-result-phonetic';
     phonetic.textContent = record.phonetic || '无音标';
-    head.append(word, phonetic);
+    head.append(title, phonetic);
     const meaning = document.createElement('p');
     meaning.textContent = record.meaning || '暂无释义';
     const sentence = document.createElement('p');
