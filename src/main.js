@@ -7,6 +7,7 @@ const { WORD_BOOK_CATALOG, downloadWordBook } = require('./online-wordbooks');
 
 let stripWindow;
 let mainWindow;
+let lookupWindow;
 let tray;
 let store;
 let lastRatingAt = 0;
@@ -198,7 +199,7 @@ function createMainWindow() {
     minHeight: 560,
     show: false,
     icon: createAppIcon(),
-    title: '摸鱼单词v65版本',
+    title: '摸鱼单词v66版本',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -221,13 +222,60 @@ function createMainWindow() {
   });
 }
 
+function createLookupWindow(query = '') {
+  const initialQuery = String(query || '').trim();
+  if (lookupWindow && !lookupWindow.isDestroyed()) {
+    if (lookupWindow.isMinimized()) lookupWindow.restore();
+    lookupWindow.show();
+    lookupWindow.focus();
+    const sendLookup = () => lookupWindow && !lookupWindow.isDestroyed()
+      && lookupWindow.webContents.send('lookup-current', initialQuery);
+    if (lookupWindow.webContents.isLoading()) lookupWindow.webContents.once('did-finish-load', sendLookup);
+    else sendLookup();
+    return;
+  }
+
+  lookupWindow = new BrowserWindow({
+    width: 480,
+    height: 560,
+    minWidth: 420,
+    minHeight: 420,
+    show: false,
+    icon: createAppIcon(),
+    title: '摸鱼单词v66版本 · 查词',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+  lookupWindow.setMenu(null);
+
+  const lookupFile = path.join(__dirname, 'lookup.html');
+  secureWindow(lookupWindow, lookupFile);
+  lookupWindow.loadFile(lookupFile);
+  lookupWindow.webContents.on('render-process-gone', (_event, details) => {
+    logError('lookup render-process-gone', JSON.stringify(details));
+  });
+  lookupWindow.once('ready-to-show', () => {
+    lookupWindow.show();
+    lookupWindow.focus();
+    lookupWindow.webContents.send('lookup-current', initialQuery);
+  });
+  lookupWindow.on('closed', () => {
+    lookupWindow = null;
+  });
+}
+
 function focusExistingApp() {
   createMainWindow();
   if (stripWindow && !stripWindow.isDestroyed()) stripWindow.showInactive();
   dialog.showMessageBox(mainWindow || stripWindow, {
     type: 'info',
-    title: '摸鱼单词v65版本',
-    message: '摸鱼单词v65版本已经打开',
+    title: '摸鱼单词v66版本',
+    message: '摸鱼单词v66版本已经打开',
     detail: '已为你显示正在运行的窗口。',
     buttons: ['知道了']
   }).catch(() => {});
@@ -235,10 +283,7 @@ function focusExistingApp() {
 
 function openLookup() {
   const current = store && store.getState().word;
-  const sendLookup = () => mainWindow && mainWindow.webContents.send('lookup-current', current ? current.word : '');
-  createMainWindow();
-  if (mainWindow && mainWindow.webContents.isLoading()) mainWindow.webContents.once('did-finish-load', sendLookup);
-  else sendLookup();
+  createLookupWindow(current ? current.word : '');
 }
 
 async function lookupOnlineWord(query) {
@@ -288,6 +333,7 @@ function showStripContextMenu() {
   Menu.buildFromTemplate([
     { label: '已掌握(以后不再出现)', click: () => perform('dismiss'), enabled: !!current },
     { label: current && current.favorite ? '取消收藏单词' : '收藏该单词', click: () => perform('favorite'), enabled: !!current },
+    { label: '查词', click: openLookup },
     { label: '在线查找', click: openOnlineLookup, enabled: !!current },
     { type: 'separator' },
     { label: '显示主窗口', click: createMainWindow },
@@ -379,10 +425,11 @@ function registerShortcuts() {
 
 function createTray() {
   tray = new Tray(createAppIcon());
-  tray.setToolTip('摸鱼单词v65版本');
+  tray.setToolTip('摸鱼单词v66版本');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '显示横条', click: () => stripWindow && stripWindow.showInactive() },
     { label: '隐藏横条', click: () => stripWindow && stripWindow.hide() },
+    { label: '查词', click: openLookup },
     { label: '打开管理面板', click: createMainWindow },
     { type: 'separator' },
     { label: '退出', click: () => app.quit() }
@@ -407,7 +454,7 @@ if (hasSingleInstanceLock) {
     createMainWindow();
   }).catch((error) => {
     logError('app.whenReady', error);
-    dialog.showErrorBox('摸鱼单词v65版本无法启动', '学习数据无法读取，已保留数据库与备份文件。请从备份恢复后重试。');
+    dialog.showErrorBox('摸鱼单词v66版本无法启动', '学习数据无法读取，已保留数据库与备份文件。请从备份恢复后重试。');
     app.quit();
   });
 }
@@ -470,11 +517,13 @@ ipcMain.handle('lookup:save', (_event, record, addToPlan) => {
   if (addToPlan) {
     const result = word.status === 'new'
       ? store.addNewWordsToPlan([word.id], 'lookup_new')
-      : store.addReviewWordsToPlan([word.id]);
+      : store.addReviewWordsToPlan([word.id], 'lookup_review');
     added = result.added || 0;
   }
   broadcastState();
-  return { word, added };
+  const refreshed = store.listWords(word.word, { scope: 'book', page: 1, pageSize: 20 })
+    .items.find((item) => item.id === word.id) || word;
+  return { word: refreshed, added };
 });
 ipcMain.handle('words:new-list', (_event, query) => store.listNewWords(query));
 ipcMain.handle('plan:sample-new', (_event, count, query) => store.sampleNewWords(count, query));
@@ -594,7 +643,7 @@ ipcMain.handle('import:choose', async () => {
   return { state: store.getState(), imported };
 });
 ipcMain.handle('backup:save', async () => {
-  const defaultName = `摸鱼单词v65版本备份-${new Date().toISOString().slice(0, 10)}.sqlite`;
+  const defaultName = `摸鱼单词v66版本备份-${new Date().toISOString().slice(0, 10)}.sqlite`;
   const backupDirectory = store.getState().settings.backupDirectory || app.getPath('documents');
   const result = await dialog.showSaveDialog(mainWindow || stripWindow, {
     title: '备份学习数据',

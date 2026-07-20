@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://dict.youdao.com https://*.youdao.com; media-src 'self' https://dict.youdao.com https://*.youdao.com; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>摸鱼单词v65版本</title>
+    <title>摸鱼单词v66版本</title>
     <link rel="icon" href="../assets/icon.svg" />
     <link rel="stylesheet" href="./strip.css" />
   </head>
@@ -15,11 +15,16 @@
           <strong id="word">loading</strong>
           <span id="phonetic"></span>
         </button>
-        <div class="quick-meaning" id="quickMeaning">Alt+F 看答案</div>
+        <div class="quick-meaning" id="quickMeaning" aria-live="polite">
+          <span class="quick-meaning-track">
+            <span class="quick-meaning-text" id="quickMeaningText">Alt+F 看答案</span>
+            <span class="quick-meaning-text quick-meaning-clone" id="quickMeaningClone" aria-hidden="true" hidden></span>
+          </span>
+        </div>
       </div>
       <section class="details" id="details">
         <div class="details-scroll">
-          <div class="meta"><span id="mode">复习优先</span><span id="due">下次 现在</span></div>
+          <div class="meta"><span id="mode">复习优先</span><span id="due">动态排期</span></div>
           <div id="meaning">Alt+F 看答案</div>
           <div id="sentence"></div>
         </div>

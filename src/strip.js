@@ -26,6 +26,28 @@ function setCompactMode(enabled) {
   button.title = enabled ? '切换完整显示' : '切换专注显示';
 }
 
+function setQuickMeaning(text) {
+  const container = el('quickMeaning');
+  const content = el('quickMeaningText');
+  const clone = el('quickMeaningClone');
+  const value = String(text || '').trim();
+  content.textContent = value;
+  clone.textContent = value;
+  clone.hidden = true;
+  container.classList.remove('is-scrolling');
+  container.style.removeProperty('--scroll-duration');
+
+  requestAnimationFrame(() => {
+    const overflow = content.scrollWidth > container.clientWidth;
+    clone.hidden = !overflow;
+    container.classList.toggle('is-scrolling', overflow);
+    if (overflow) {
+      const duration = Math.max(7, Math.min(28, content.scrollWidth / 22));
+      container.style.setProperty('--scroll-duration', `${duration}s`);
+    }
+  });
+}
+
 function speakWithSystemVoice(word, volume) {
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
@@ -69,14 +91,14 @@ function render(state) {
   if (!word) {
     el('word').textContent = '没有单词';
     el('phonetic').textContent = '';
-    el('quickMeaning').textContent = '导入一个词书开始';
+    setQuickMeaning('导入一个词书开始');
     el('meaning').textContent = '导入一个词书开始';
     el('sentence').textContent = '';
     return;
   }
 
   el('mode').textContent = `${word.queueLabel} · ${word.stageLabel} · 保持${word.retention}%`;
-  el('due').textContent = `下次 ${word.dueLabel}`;
+  el('due').textContent = word.stubbornness ? `顽固 ${word.stubbornness}` : '动态排期';
   el('word').textContent = word.word;
   el('phonetic').textContent = word.phonetic || '';
 
@@ -86,11 +108,11 @@ function render(state) {
   }
 
   if (state.revealed) {
-    el('quickMeaning').textContent = word.meaning || '暂无释义';
+    setQuickMeaning(word.meaning || '暂无释义');
     el('meaning').textContent = word.meaning || '暂无释义，可在面板里编辑';
     el('sentence').textContent = word.sentence || '可在管理面板里补充例句。';
   } else {
-    el('quickMeaning').textContent = '点击“答”后显示释义';
+    setQuickMeaning('点击“答”后显示释义');
     el('meaning').textContent = 'Alt+F 看答案';
     el('sentence').textContent = '先回忆，再评分。';
   }

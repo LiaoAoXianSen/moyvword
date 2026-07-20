@@ -91,19 +91,17 @@ function assertEq(actual, expected, msg) {
   assertEq(store.getState().word.word, order[3], 'getState keeps previous word');
 
   store.previous();
-  assertEq(store.getState().word.word, order[2], 'store previous twice');
+  assertEq(store.getState().word.word, order[3], 'store previous cannot move further back');
 
   store.skip();
-  assertEq(store.getState().word.word, order[3], 'next/skip advances in trail first');
-  store.skip();
-  assertEq(store.getState().word.word, live, 'next/skip then returns to live');
+  assertEq(store.getState().word.word, live, 'next/skip returns to post-rate live');
 
   store.previous();
   assertEq(store.getState().word.word, order[3], 'previous after return');
-  store.rate('again'); // browsing rate: no schedule change, return live
-  assertEq(store.getState().word.word, live, 'rate on history returns live');
+  store.rate('again'); // correction rate: rollback old good, apply again, return live
+  assertEq(store.getState().word.word, live, 'rate on correction returns live');
   store.previous();
-  assertEq(store.getState().word.word, order[3], 'history preserved after browse-rate');
+  assertEq(store.getState().word.word, live, 'correction slot is consumed after re-rate');
 
   // live rate then previous continuity
   const before = store.getState().word.word;
@@ -111,6 +109,8 @@ function assertEq(actual, expected, msg) {
   const after = store.getState().word && store.getState().word.word;
   store.previous();
   assertEq(store.getState().word.word, before, 'previous after live hard');
+  store.previous();
+  assertEq(store.getState().word.word, before, 'previous after live hard is single-slot');
   store.skip();
   assertEq(store.getState().word && store.getState().word.word, after, 'skip returns to post-rate live');
 

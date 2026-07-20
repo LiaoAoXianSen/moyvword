@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.dictionaryapi.dev https://dict.youdao.com https://*.youdao.com; media-src 'self' https://dict.youdao.com https://*.youdao.com; object-src 'none'; base-uri 'self'; form-action 'none'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>摸鱼单词v66版本 · 查词</title>
+    <link rel="icon" href="../assets/icon.svg" />
+    <link rel="stylesheet" href="./lookup.css" />
+  </head>
+  <body>
+    <main class="lookup-shell">
+      <header class="lookup-header">
+        <div>
+          <h1>查词</h1>
+          <p>先搜当前词本，未命中再查在线词典。</p>
+        </div>
+      </header>
+      <form class="lookup-form" id="lookupForm">
+        <input id="lookupInput" type="search" placeholder="输入英文单词" autocomplete="off" required />
+        <button type="submit">搜索</button>
+      </form>
+      <p id="lookupNotice" role="status">输入单词开始查询。</p>
+      <section class="lookup-results" id="lookupResults" aria-label="查词结果"></section>
+    </main>
+    <script src="./lookup.js"></script>
+  </body>
+</html>

@@ -120,49 +120,76 @@ function safeNumber(value, fallback, min = 0) {
   return Number.isFinite(value) ? Math.max(min, value) : fallback;
 }
 
-// Cross-day intervals (days). Only the first formal rating of the day uses these.
-// again = next-day must-return; hard stays short; good starts short then ladders up.
-const MOMO_GOOD_STEPS = [1, 3, 7, 15, 30, 60, 90, 120, 180, 365];
-const MOMO_MAX_DAYS = 365;
+// Cross-day intervals (days). Only the first formal rating of the day writes these.
+// The app still keeps same-day reinforcement separately in store.js; this scheduler
+// only decides the hidden long-term next-review day.
+const DYNAMIC_MAX_DAYS = 3650;
+const LEGACY_GOOD_STEPS = [1, 3, 7, 15, 30, 60, 90, 120, 180, 365];
 
 function wordStaticDifficulty(current) {
   return clamp(Number(current.wordDifficulty) || estimateWordDifficulty(current.word) || 5, 1, 10);
 }
 
-function momoAgainDays(_current) {
-  // G1 forget: always return the next day. Weak words must not be deferred further.
-  return 1;
-}
-
-function momoHardDays(current) {
-  // G2 fuzzy: 2-3 days; harder words return sooner.
-  const d = wordStaticDifficulty(current);
-  if (d >= 7.5) return 2;
-  return 3;
-}
-
-function momoGoodStepIndex(current, grade) {
+function nextGoodStepIndex(current, grade) {
   const prev = String(current.longTermGrade || '');
-  const existing = Math.max(0, Math.min(MOMO_GOOD_STEPS.length - 1, Math.floor(Number(current.goodStepIndex) || 0)));
+  const existing = Math.max(0, Math.min(LEGACY_GOOD_STEPS.length - 1, Math.floor(Number(current.goodStepIndex) || 0)));
   if (grade !== 'good' && grade !== 'easy') return 0;
   if (current.status === 'new' || !current.reviewCount) return 0;
   if (prev === 'again' || prev === 'hard' || !prev) return 0;
   if (prev === 'good' || prev === 'easy') {
-    return Math.min(MOMO_GOOD_STEPS.length - 1, existing + 1);
+    return Math.min(LEGACY_GOOD_STEPS.length - 1, existing + 1);
   }
   return existing;
 }
 
-function momoIntervalDays(current, grade) {
-  if (grade === 'again') return momoAgainDays(current);
-  if (grade === 'hard') return momoHardDays(current);
-  if (grade === 'easy') return MOMO_MAX_DAYS;
-  const step = momoGoodStepIndex(current, 'good');
-  return MOMO_GOOD_STEPS[step] || 7;
+function fsrsScheduledDays(card, t) {
+  if (!card) return 0;
+  const scheduled = Math.round(Number(card.scheduled_days) || 0);
+  if (scheduled > 0) return scheduled;
+  const dueTime = card.due instanceof Date ? card.due.getTime() : Number(new Date(card.due).getTime());
+  if (Number.isFinite(dueTime) && dueTime > t) {
+    return Math.round((dueTime - t) / DAY);
+  }
+  return 0;
+}
+
+function fallbackIntervalDays(current, grade) {
+  const d = wordStaticDifficulty(current);
+  if (grade === 'again') return 1;
+  if (grade === 'hard') return d >= 7.5 ? 2 : 3;
+  if (grade === 'easy') return DYNAMIC_MAX_DAYS;
+
+  // Fallback only: keep an old-step-ish floor, then bend it by per-word difficulty
+  // and existing stability so two mature cards are not forced into the same interval.
+  const step = nextGoodStepIndex(current, 'good');
+  const legacy = LEGACY_GOOD_STEPS[step] || 7;
+  const stability = Math.max(0, Number(current.stability) || 0);
+  const difficultyFactor = clamp(1 + (5 - d) * 0.08, 0.72, 1.28);
+  return Math.max(1, Math.round(Math.max(legacy, stability * 1.25) * difficultyFactor));
+}
+
+function longTermIntervalDays(current, grade, fsrsCard, t) {
+  const fallback = fallbackIntervalDays(current, grade);
+  const fsrsDays = fsrsScheduledDays(fsrsCard, t);
+  let raw = fsrsDays > 0 ? fsrsDays : fallback;
+  if (grade === 'again') {
+    // Same-day relearning is handled outside this scheduler. For long-term planning,
+    // forgotten words return soon, but mature words can still vary mildly.
+    const stabilityHint = Math.round((Number(current.stability) || 0) * 0.18);
+    raw = Math.max(raw, stabilityHint || fallback);
+    return clamp(Math.round(raw), 1, 14);
+  }
+  if (grade === 'hard') {
+    return clamp(Math.round(Math.max(raw, fallback)), 2, 90);
+  }
+  if (grade === 'easy') {
+    return DYNAMIC_MAX_DAYS;
+  }
+  return clamp(Math.round(Math.max(raw, 1)), 1, DYNAMIC_MAX_DAYS);
 }
 
 function buildFallbackSchedule(current, grade, t) {
-  // Kept as a pure Momo long-term scheduler (no short-term minute intervals).
+  // Kept for old callers/tests: a pure long-term scheduler (no short-term minute intervals).
   return rateWord(current, grade, t);
 }
 
@@ -294,10 +321,10 @@ function rateWord(word, grade, at = now()) {
       status: 'done',
       masterTag: true,
       weakTag: false,
-      stability: Math.max(Number(current.stability) || 0, MOMO_MAX_DAYS),
+      stability: Math.max(Number(current.stability) || 0, DYNAMIC_MAX_DAYS),
       difficulty: clamp((current.difficulty || d) - 0.8, 1, 10),
       memoryStage: STABILITY_BANDS.length - 1,
-      goodStepIndex: MOMO_GOOD_STEPS.length - 1,
+      goodStepIndex: LEGACY_GOOD_STEPS.length - 1,
       interval: 0,
       due: 0,
       fsrsState: State.Review,
@@ -313,12 +340,12 @@ function rateWord(word, grade, at = now()) {
     };
   }
 
-  const daysRaw = momoIntervalDays(current, grade);
-  const days = Math.max(1, Math.min(MOMO_MAX_DAYS, daysRaw));
+  const fsrsCard = nextFsrsCard(current, grade, t);
+  const days = longTermIntervalDays(current, grade, fsrsCard, t);
   const interval = msFromDays(days);
-  const goodStepIndex = grade === 'good' ? momoGoodStepIndex(current, 'good') : 0;
-  let stability = Number(current.stability) || 0;
-  let difficulty = clamp(Number(current.difficulty) || d, 1, 10);
+  const goodStepIndex = grade === 'good' ? nextGoodStepIndex(current, 'good') : 0;
+  let stability = Number(fsrsCard && fsrsCard.stability) || Number(current.stability) || 0;
+  let difficulty = clamp(Number(fsrsCard && fsrsCard.difficulty) || Number(current.difficulty) || d, 1, 10);
   let familiarity = Number(current.familiarity) || 0;
   let status = 'review';
   let weakTag = !!current.weakTag;
@@ -327,8 +354,8 @@ function rateWord(word, grade, at = now()) {
   let lapseCount = current.lapseCount || 0;
 
   if (grade === 'again') {
-    // G1: S drops hard, short 1-3d interval, mark weak.
-    stability = Math.max(0.5, Math.min(days, (stability || days) * 0.35));
+    // G1: forgotten. Long-term due is soon; same-day reinforcement is separate.
+    stability = Math.max(0.5, Math.min(days, stability || days));
     difficulty = clamp(difficulty + 1.1, 1, 10);
     familiarity = clamp((familiarity || 20) * 0.35, 5, 45);
     status = 'learning';
@@ -336,8 +363,8 @@ function rateWord(word, grade, at = now()) {
     wrongCount += 1;
     lapseCount += 1;
   } else if (grade === 'hard') {
-    // G2: small S growth, 3-7d.
-    stability = Math.max(days * 0.8, (stability || 1) * 0.9 + days * 0.15);
+    // G2: fuzzy. Keep it weak, but let FSRS/per-word history shape the interval.
+    stability = Math.max(days * 0.8, stability || days);
     difficulty = clamp(difficulty + 0.45, 1, 10);
     familiarity = clamp((familiarity || 35) * 0.7 + 10, 20, 70);
     status = 'learning';
@@ -346,15 +373,15 @@ function rateWord(word, grade, at = now()) {
     hardCount += 1;
     lapseCount += 1;
   } else {
-    // G3: steady S growth, exponential step ladder.
-    stability = Math.max(days, (stability || 1) * 1.35 + days * 0.25);
+    // G3: recognised. Let FSRS/history make mature cards jump further (e.g. 60+ days).
+    stability = Math.max(days, stability || days);
     difficulty = clamp(difficulty - 0.25, 1, 10);
     familiarity = 82;
     status = 'review';
     if ((current.wrongCount || 0) === 0 && (current.hardCount || 0) === 0) weakTag = false;
   }
 
-  const memoryStage = stageFromStability(Math.max(stability / 30, days / 30));
+  const memoryStage = stageFromStability(Math.max(stability, days));
   return {
     ...current,
     status,

@@ -242,7 +242,9 @@ function renderStudyBoard(stats) {
   byId('loopPlanHint').textContent = plan.shortLoops.active ? `其中 ${plan.shortLoops.due} 个已到期` : '当前没有短循环';
   setProgress('loopPlanProgress', plan.shortLoops.due, Math.max(1, plan.shortLoops.active));
   byId('stageNewCount').textContent = `待学 ${stages.new}`;
-  byId('nextDueLabel').textContent = `下一批：${debt.nextDueLabel}`;
+  byId('nextDueLabel').textContent = debt.urgent || debt.regular || debt.loops
+    ? '复习顺序动态计算'
+    : '动态排期已隐藏';
   byId('urgentDebtCount').textContent = debt.urgent;
   byId('regularDebtCount').textContent = debt.regular;
   byId('loopDebtCount').textContent = debt.loops;
@@ -416,7 +418,7 @@ function render(nextState) {
   byId('stripOpacityValue').value = `${stripAppearance.opacity}%`;
   byId('stripTextColor').value = stripAppearance.textColor;
   setSuggestedCountInput('managerRandomCount', suggestedNewWordCount(stats.dailyPlan));
-  byId('todayPlan').textContent = `本词本：新词 ${stats.dailyPlan.newWords.completed}/${stats.dailyPlan.newWords.target}，复习 ${stats.dailyPlan.reviews.completed}/${stats.dailyPlan.reviews.target}，短循环 ${stats.dailyPlan.shortLoops.due}/${stats.dailyPlan.shortLoops.active}。${stats.planText}；下一次复习：${stats.nextDueLabel}`;
+  byId('todayPlan').textContent = `本词本：新词 ${stats.dailyPlan.newWords.completed}/${stats.dailyPlan.newWords.target}，复习 ${stats.dailyPlan.reviews.completed}/${stats.dailyPlan.reviews.target}，短循环 ${stats.dailyPlan.shortLoops.due}/${stats.dailyPlan.shortLoops.active}。${stats.planText}`;
   byId('storagePath').textContent = state.storage ? `主数据：${state.storage.path}` : '';
   byId('storageMirrorPath').textContent = state.storage && state.storage.mirrorPath ? `C盘兜底：${state.storage.mirrorPath}` : '';
   byId('backupDirectoryPath').textContent = state.storage && state.storage.backupDirectory ? `自定义备份：${state.storage.backupDirectory}` : '自定义备份：未选择';
@@ -460,7 +462,7 @@ function render(nextState) {
   byId('currentWord').textContent = word.word;
   byId('currentMeta').textContent = word.queueLabel === '今日回顾'
     ? `今日回顾 · 剩余 ${review.remainingCards || 0} 张 · ${word.stageLabel} · ${word.phonetic || '无音标'} · ${word.favorite ? '已收藏' : '未收藏'}`
-    : `${word.queueLabel} · ${word.stageLabel} · 保持 ${word.retention}% · 顽固 ${word.stubbornness} · 逾期 ${word.overdueRatio} · ${word.phonetic || '无音标'} · 下次：${word.dueLabel} · ${word.favorite ? '已收藏' : '未收藏'}`;
+    : `${word.queueLabel} · ${word.stageLabel} · 保持 ${word.retention}% · 顽固 ${word.stubbornness} · 逾期 ${word.overdueRatio} · ${word.phonetic || '无音标'} · ${word.favorite ? '已收藏' : '未收藏'}`;
   const answer = byId('currentAnswer');
   if (state.revealed) {
     const meaning = document.createElement('strong');
@@ -548,7 +550,7 @@ function renderOnlineBooks() {
 }
 
 function wordSummary(word) {
-  return `${word.queueLabel} · ${word.dueLabel} · 顽固 ${word.stubbornness}`;
+  return `${word.queueLabel} · ${word.stageLabel} · 顽固 ${word.stubbornness}`;
 }
 
 function renderWordList(preserveScroll = false) {
@@ -573,7 +575,7 @@ function renderWordList(preserveScroll = false) {
     title.textContent = word.word;
     const detail = document.createElement('span');
     detail.textContent = activeScope === 'records'
-      ? `${word.meaning || '暂无释义'} · ${word.queueLabel} · 下次 ${word.dueLabel} · 顽固 ${word.stubbornness}`
+      ? `${word.meaning || '暂无释义'} · ${word.queueLabel} · ${word.stageLabel} · 顽固 ${word.stubbornness}`
       : (word.meaning || wordSummary(word));
     const body = document.createElement('span');
     body.className = 'word-row-body';
@@ -709,9 +711,21 @@ function renderLookupResults(result) {
     }
     const addToPlan = document.createElement('button');
     addToPlan.type = 'button';
-    addToPlan.dataset.lookupAction = 'plan';
-    addToPlan.dataset.index = String(index);
-    addToPlan.textContent = '加入今日记忆';
+    if (record.inTodayPlan) {
+      addToPlan.textContent = '已加入';
+      addToPlan.disabled = true;
+    } else if (record.status === 'done') {
+      addToPlan.textContent = '已掌握';
+      addToPlan.disabled = true;
+    } else if (record.hasLearningRecord || (record.status && record.status !== 'new')) {
+      addToPlan.dataset.lookupAction = 'plan';
+      addToPlan.dataset.index = String(index);
+      addToPlan.textContent = '加入今日复习';
+    } else {
+      addToPlan.dataset.lookupAction = 'plan';
+      addToPlan.dataset.index = String(index);
+      addToPlan.textContent = '加入今日记忆';
+    }
     actions.append(addToPlan);
     row.append(head, meaning);
     if (record.sentence) row.append(sentence);
@@ -736,12 +750,16 @@ async function searchLookup(query = byId('lookupInput').value) {
 function openLookupDialog(query = '') {
   const dialog = byId('lookupDialog');
   if (!dialog.open) dialog.showModal();
-  byId('lookupInput').value = query;
+  const input = byId('lookupInput');
+  input.value = query;
   byId('lookupNotice').textContent = query ? '正在搜索...' : '优先搜索当前词本；未命中时查询在线词典。';
   byId('lookupResults').replaceChildren();
   lookupRecords = [];
   if (query) searchLookup(query);
-  else byId('lookupInput').focus();
+  setTimeout(() => {
+    input.focus();
+    if (query) input.select();
+  }, 0);
 }
 
 function resetDownloadProgress() {
@@ -1002,6 +1020,9 @@ byId('lookupResults').addEventListener('click', async (event) => {
   const record = lookupRecords[Number(button.dataset.index)];
   if (!record) return;
   const addToPlan = button.dataset.lookupAction === 'plan';
+  const planLabel = record.hasLearningRecord || (record.status && record.status !== 'new')
+    ? '今日复习'
+    : '今日记忆';
   button.disabled = true;
   try {
     const result = await window.moyu.saveLookupWord(record, addToPlan);
@@ -1010,7 +1031,7 @@ byId('lookupResults').addEventListener('click', async (event) => {
     await refreshWords(false);
     renderLookupResults({ source: 'book', items: [result.word], total: 1 });
     byId('lookupNotice').textContent = addToPlan
-      ? (result.added ? '已加入当前词本和今日记忆。' : '已在当前词本中，未重复加入今日记忆。')
+      ? (result.added ? `已加入当前词本和${planLabel}。` : `已在当前词本中，未重复加入${planLabel}。`)
       : '已加入当前词本。';
   } catch (error) {
     byId('lookupNotice').textContent = error.message || '添加失败。';

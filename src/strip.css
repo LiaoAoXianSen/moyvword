@@ -98,13 +98,68 @@ body.is-compact #word {
 .quick-meaning {
   min-width: 0;
   overflow: hidden;
+  display: flex;
+  align-items: center;
   padding: 0 10px;
   color: color-mix(in srgb, var(--strip-ink-custom, var(--muted)) 68%, transparent);
   font-size: 11px;
   line-height: 28px;
-  text-overflow: ellipsis;
   white-space: nowrap;
   -webkit-app-region: drag;
+}
+
+.quick-meaning-track {
+  display: inline-flex;
+  align-items: center;
+  min-width: 100%;
+  max-width: max-content;
+  will-change: transform;
+}
+
+.quick-meaning-text {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.quick-meaning-clone {
+  padding-left: 20px;
+}
+
+.quick-meaning.is-scrolling .quick-meaning-track {
+  animation: quick-meaning-marquee var(--scroll-duration, 8s) linear infinite;
+}
+
+.quick-meaning:hover .quick-meaning-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-meaning {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .quick-meaning::-webkit-scrollbar {
+    display: none;
+  }
+
+  .quick-meaning.is-scrolling .quick-meaning-track {
+    animation: none;
+  }
+
+  .quick-meaning-clone {
+    display: none;
+  }
+}
+
+@keyframes quick-meaning-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 .rating-actions {

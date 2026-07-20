@@ -46,7 +46,6 @@ const {
   defaultNavigation,
   enterManual,
   goNext,
-  goPrevious,
   isBrowsing,
   migrateNavigation,
   removeWord,
@@ -68,8 +67,11 @@ const IN_DAY_AGAIN_INTERVAL = 3 * 60 * 1000;
 const IN_DAY_HARD_INTERVAL = 5 * 60 * 1000;
 const IN_DAY_AGAIN_REPEATS = 3;
 const IN_DAY_HARD_REPEATS = 2;
-// After again/hard, require this many consecutive good/easy ratings before the plan item completes.
-const GOODS_AFTER_UNCERTAIN_TO_COMPLETE = 3;
+const TODAY_PROGRESS_COMPLETE = 100;
+const TODAY_PROGRESS_AGAIN = 20;
+const TODAY_PROGRESS_HARD = 45;
+const TODAY_PROGRESS_GOOD_GAIN = 35;
+const TODAY_PROGRESS_HARD_GAIN = 15;
 
 function defaultData() {
   return {
@@ -111,6 +113,7 @@ function defaultData() {
       planCompletionToken: '',
       manualPreviewId: '',
       manualReturnId: '',
+      ratingCorrection: defaultRatingCorrection(),
       todayReview: {
         date: todayKey(),
         queue: [],
@@ -149,6 +152,26 @@ function startOfDayFromTime(time) {
   const date = new Date(Number(time) || now());
   date.setHours(0, 0, 0, 0);
   return date.getTime();
+}
+
+function defaultRatingCorrection() {
+  return {
+    wordId: '',
+    active: false,
+    liveWordId: '',
+    beforeWord: null,
+    beforeSession: null,
+    beforeStudyLog: null,
+    beforeNavigation: null,
+    beforeRevealed: false,
+    oldGrade: '',
+    ratedAt: 0
+  };
+}
+
+function deepClone(value) {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(JSON.stringify(value));
 }
 
 // One-shot repair for the old "again = 1-3 day defer" schedule.
@@ -225,6 +248,7 @@ function repairMisplacedAgainSchedules(words, at = now()) {
     if (!normalized.session.planCompletionToken) normalized.session.planCompletionToken = '';
     if (!normalized.session.manualPreviewId) normalized.session.manualPreviewId = '';
     if (!normalized.session.manualReturnId) normalized.session.manualReturnId = '';
+    normalized.session.ratingCorrection = normalizeRatingCorrection(normalized.session.ratingCorrection);
     normalized.session.todayReview = normalizeTodayReview(normalized.session.todayReview);
     normalized.settings.learningWindowSize = Math.max(1, Math.min(50, Number(normalized.settings.learningWindowSize) || 15));
     normalized.settings.audioVolume = Math.max(0, Math.min(100, Math.round(Number(normalized.settings.audioVolume) || 0)));
@@ -263,6 +287,34 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       ? (nav.mode === 'manual' ? nav.manualWordId : viewWordId(nav)) || ''
       : '';
     target.session.manualReturnId = isBrowsing(nav) ? (nav.liveWordId || '') : '';
+  }
+
+  function normalizeRatingCorrection(raw) {
+    const value = raw && typeof raw === 'object' ? raw : {};
+    const base = defaultRatingCorrection();
+    const wordId = String(value.wordId || '').trim();
+    const beforeWord = value.beforeWord && typeof value.beforeWord === 'object'
+      ? normalizeWord(value.beforeWord)
+      : null;
+    return {
+      ...base,
+      wordId,
+      active: !!value.active && !!wordId,
+      liveWordId: String(value.liveWordId || '').trim(),
+      beforeWord,
+      beforeSession: value.beforeSession && typeof value.beforeSession === 'object'
+        ? deepClone(value.beforeSession)
+        : null,
+      beforeStudyLog: Array.isArray(value.beforeStudyLog)
+        ? deepClone(value.beforeStudyLog)
+        : null,
+      beforeNavigation: value.beforeNavigation && typeof value.beforeNavigation === 'object'
+        ? defaultNavigation(value.beforeNavigation)
+        : null,
+      beforeRevealed: !!value.beforeRevealed,
+      oldGrade: ['again', 'hard', 'good', 'easy'].includes(value.oldGrade) ? value.oldGrade : '',
+      ratedAt: Number(value.ratedAt) || 0
+    };
   }
 
   function applyNavigation(nextNav, options = {}) {
@@ -306,6 +358,17 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       .map((item, index) => {
         const uncertainDate = String(item.uncertainDate || '');
         const keepUncertain = uncertainDate === today;
+        const progressDate = String(item.todayProgressDate || item.uncertainDate || '');
+        const keepProgress = progressDate === today;
+        const legacyStreak = keepUncertain
+          ? Math.max(0, Math.floor(Number(item.goodAfterUncertainStreak) || 0))
+          : 0;
+        const rawProgress = Number(item.todayProgress);
+        const migratedProgress = keepProgress && Number.isFinite(rawProgress)
+          ? rawProgress
+          : (legacyStreak
+              ? Math.min(TODAY_PROGRESS_COMPLETE, TODAY_PROGRESS_AGAIN + legacyStreak * TODAY_PROGRESS_GOOD_GAIN)
+              : 0);
         return {
           id: String(item.id || `plan-${item.wordId || index}-${item.addedAt || now()}`),
           wordId: String(item.wordId || ''),
@@ -318,7 +381,15 @@ function repairMisplacedAgainSchedules(words, at = now()) {
           uncertainDate: keepUncertain ? uncertainDate : '',
           goodAfterUncertainStreak: keepUncertain
             ? Math.max(0, Math.floor(Number(item.goodAfterUncertainStreak) || 0))
-            : 0
+            : 0,
+          todayProgressDate: keepProgress || legacyStreak ? today : '',
+          todayProgress: Math.max(0, Math.min(TODAY_PROGRESS_COMPLETE, Math.round(migratedProgress) || 0)),
+          todayAttempts: keepProgress
+            ? Math.max(0, Math.floor(Number(item.todayAttempts) || 0))
+            : 0,
+          todayLastGrade: keepProgress && ['again', 'hard', 'good', 'easy'].includes(item.todayLastGrade)
+            ? item.todayLastGrade
+            : ''
         };
       })
       .filter((item) => item.wordId);
@@ -437,6 +508,7 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       planCompletionToken: '',
       manualPreviewId: '',
       manualReturnId: '',
+      ratingCorrection: defaultRatingCorrection(),
       todayReview: defaultTodayReview()
     };
     // Keep trail across days, but always resume at the study frontier.
@@ -565,7 +637,11 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       addedAt: t,
       completedAt: 0,
       uncertainDate: '',
-      goodAfterUncertainStreak: 0
+      goodAfterUncertainStreak: 0,
+      todayProgressDate: '',
+      todayProgress: 0,
+      todayAttempts: 0,
+      todayLastGrade: ''
     };
   }
 
@@ -585,6 +661,7 @@ function repairMisplacedAgainSchedules(words, at = now()) {
     if (completedTodayIds.size) {
       data.session.planItems = data.session.planItems.filter((item) => {
         if (item.status === 'completed' || item.status === 'cancelled') return true;
+        if (item.type === 'review' && item.source === 'lookup_review') return true;
         return !completedTodayIds.has(item.wordId);
       });
     }
@@ -901,48 +978,65 @@ function repairMisplacedAgainSchedules(words, at = now()) {
 
   function recordPlanItemRating(wordId, grade) {
     const item = planItemForWord(wordId);
-    if (!item) return { completed: false, pendingConfirmation: false, streak: 0, needed: 0 };
+    if (!item) return { completed: false, pendingConfirmation: false, progress: 0, remaining: 0 };
     const today = todayKey();
+    const existingProgress = item.todayProgressDate === today
+      ? Math.max(0, Math.min(TODAY_PROGRESS_COMPLETE, Number(item.todayProgress) || 0))
+      : 0;
+    const attempts = item.todayProgressDate === today ? Math.max(0, Number(item.todayAttempts) || 0) + 1 : 1;
+
+    item.todayProgressDate = today;
+    item.todayAttempts = attempts;
+    item.todayLastGrade = grade;
+
     if (grade === 'again' || grade === 'hard') {
-      // Forget/fuzzy: stay in today's plan, clear confirmation progress, re-enter day-loop.
+      // Forget/fuzzy: stay in today's plan. Progress is hidden from UI and only
+      // decides how much same-day reinforcement remains.
       item.uncertainDate = today;
       item.goodAfterUncertainStreak = 0;
+      const floor = grade === 'again' ? TODAY_PROGRESS_AGAIN : TODAY_PROGRESS_HARD;
+      const gain = grade === 'again' ? 0 : TODAY_PROGRESS_HARD_GAIN;
+      item.todayProgress = grade === 'again'
+        ? Math.min(existingProgress || floor, floor)
+        : Math.max(floor, Math.min(TODAY_PROGRESS_COMPLETE - 1, existingProgress + gain));
       return {
         completed: false,
         pendingConfirmation: true,
-        streak: 0,
-        needed: GOODS_AFTER_UNCERTAIN_TO_COMPLETE
+        progress: item.todayProgress,
+        remaining: TODAY_PROGRESS_COMPLETE - item.todayProgress
       };
     }
     if (grade !== 'good' && grade !== 'easy') {
-      return { completed: false, pendingConfirmation: false, streak: 0, needed: 0 };
+      return { completed: false, pendingConfirmation: false, progress: existingProgress, remaining: 0 };
     }
 
     // 熟知 always finishes the plan item.
     if (grade === 'easy') {
       item.uncertainDate = '';
       item.goodAfterUncertainStreak = 0;
+      item.todayProgress = TODAY_PROGRESS_COMPLETE;
       completePlanItem(wordId);
-      return { completed: true, pendingConfirmation: false, streak: 0, needed: 0 };
+      return { completed: true, pendingConfirmation: false, progress: item.todayProgress, remaining: 0 };
     }
 
-    // Clean first-pass 认识 (never uncertain today) finishes immediately.
-    const needsConfirm = item.uncertainDate === today;
-    if (!needsConfirm) {
+    // Clean first-pass 认识 finishes immediately. If this word already failed/fuzzied
+    // today, 认识 only pushes hidden same-day progress forward.
+    const needsConfirm = item.uncertainDate === today || existingProgress > 0;
+    if (!needsConfirm || existingProgress >= TODAY_PROGRESS_COMPLETE) {
       item.goodAfterUncertainStreak = 0;
+      item.todayProgress = TODAY_PROGRESS_COMPLETE;
       completePlanItem(wordId);
-      return { completed: true, pendingConfirmation: false, streak: 0, needed: 0 };
+      return { completed: true, pendingConfirmation: false, progress: item.todayProgress, remaining: 0 };
     }
 
-    // After 不认识/模糊: need consecutive 认识. Any later 不认识/模糊 resets to 0.
-    const streak = Math.max(0, Math.floor(Number(item.goodAfterUncertainStreak) || 0)) + 1;
-    item.goodAfterUncertainStreak = streak;
-    if (streak < GOODS_AFTER_UNCERTAIN_TO_COMPLETE) {
+    item.todayProgress = Math.min(TODAY_PROGRESS_COMPLETE, existingProgress + TODAY_PROGRESS_GOOD_GAIN);
+    item.goodAfterUncertainStreak = Math.max(0, Math.floor(Number(item.goodAfterUncertainStreak) || 0)) + 1;
+    if (item.todayProgress < TODAY_PROGRESS_COMPLETE) {
       return {
         completed: false,
         pendingConfirmation: true,
-        streak,
-        needed: GOODS_AFTER_UNCERTAIN_TO_COMPLETE
+        progress: item.todayProgress,
+        remaining: TODAY_PROGRESS_COMPLETE - item.todayProgress
       };
     }
 
@@ -952,8 +1046,8 @@ function repairMisplacedAgainSchedules(words, at = now()) {
     return {
       completed: true,
       pendingConfirmation: false,
-      streak,
-      needed: GOODS_AFTER_UNCERTAIN_TO_COMPLETE
+      progress: item.todayProgress,
+      remaining: 0
     };
   }
 
@@ -974,12 +1068,11 @@ function repairMisplacedAgainSchedules(words, at = now()) {
     };
   }
 
-  // After again/hard, each confirming 认识 must reappear today until streak is full.
+  // After again/hard, recognised-but-not-finished words reappear today until
+  // the hidden progress reaches 100.
   function scheduleConfirmationLoop(word, planResult = {}) {
     const t = now();
-    const needed = Math.max(1, Number(planResult.needed) || GOODS_AFTER_UNCERTAIN_TO_COMPLETE);
-    const streak = Math.max(0, Number(planResult.streak) || 0);
-    const remaining = Math.max(1, needed - streak);
+    const remaining = Math.max(1, Math.ceil((Number(planResult.remaining) || TODAY_PROGRESS_GOOD_GAIN) / TODAY_PROGRESS_GOOD_GAIN));
     return {
       ...word,
       dayLoopDate: todayKey(),
@@ -989,6 +1082,74 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       dayLoopRemaining: remaining,
       updatedAt: t
     };
+  }
+
+  function currentRatingCorrection() {
+    const correction = normalizeRatingCorrection(data.session.ratingCorrection);
+    if (!correction.wordId || !correction.beforeWord || !findWord(correction.wordId)) {
+      return defaultRatingCorrection();
+    }
+    return correction;
+  }
+
+  function clearRatingCorrection() {
+    data.session.ratingCorrection = defaultRatingCorrection();
+  }
+
+  function setRatingCorrectionActive(active) {
+    const correction = currentRatingCorrection();
+    if (!correction.wordId) {
+      clearRatingCorrection();
+      return false;
+    }
+    data.session.ratingCorrection = { ...correction, active: !!active };
+    return true;
+  }
+
+  function captureRatingCorrection(word, grade) {
+    if (!word || isTodayReviewWord(word) || isBrowsing(data.navigation)) {
+      clearRatingCorrection();
+      return;
+    }
+    const beforeSession = deepClone({
+      ...data.session,
+      ratingCorrection: defaultRatingCorrection()
+    });
+    data.session.ratingCorrection = {
+      wordId: word.id,
+      active: false,
+      liveWordId: data.navigation && data.navigation.liveWordId ? data.navigation.liveWordId : word.id,
+      beforeWord: normalizeWord(deepClone(word)),
+      beforeSession,
+      beforeStudyLog: deepClone(data.studyLog || []),
+      beforeNavigation: defaultNavigation(data.navigation),
+      beforeRevealed: !!data.revealed,
+      oldGrade: grade,
+      ratedAt: now()
+    };
+  }
+
+  function isRatingCorrectionView(word) {
+    const correction = currentRatingCorrection();
+    return !!(word && correction.wordId === word.id && correction.active);
+  }
+
+  function restoreRatingCorrectionSnapshot(correction) {
+    data.session = {
+      ...data.session,
+      ...deepClone(correction.beforeSession || {}),
+      ratingCorrection: defaultRatingCorrection()
+    };
+    data.session.planItems = normalizePlanItems(data.session.planItems || []);
+    data.session.todayReview = normalizeTodayReview(data.session.todayReview);
+    data.studyLog = Array.isArray(correction.beforeStudyLog) ? deepClone(correction.beforeStudyLog).slice(-180) : [];
+    const idx = data.words.findIndex((item) => item.id === correction.wordId);
+    if (idx !== -1 && correction.beforeWord) {
+      data.words[idx] = normalizeWord(deepClone(correction.beforeWord));
+    }
+    data.navigation = defaultNavigation(correction.beforeNavigation || { liveWordId: correction.wordId });
+    data.revealed = !!correction.beforeRevealed;
+    syncLegacyNavigationFields(data);
   }
 
   function cancelActivePlanItems(wordIds) {
@@ -1014,7 +1175,8 @@ function repairMisplacedAgainSchedules(words, at = now()) {
     if (capacity <= 0) return { added, plan: planSnapshot() };
     data.words.forEach((word) => {
       if (added >= capacity) return;
-      if (!ids.has(word.id) || existing.has(word.id) || completedToday.has(word.id)) return;
+      if (!ids.has(word.id) || existing.has(word.id)) return;
+      if (completedToday.has(word.id) && !(type === 'review' && source === 'lookup_review')) return;
       if (type === 'new' && word.status !== 'new') return;
       if (type === 'new' && !wordInBook(word, data.settings.activeBookId)) return;
       if (type === 'review' && !isReviewableWord(word)) return;
@@ -1381,6 +1543,118 @@ function repairMisplacedAgainSchedules(words, at = now()) {
     else save();
   }
 
+  function applyStudyRating(word, grade, options = {}) {
+    if (!word) return;
+    const createCorrection = options.createCorrection !== false;
+    if (createCorrection) captureRatingCorrection(word, grade);
+
+    const beforeStatus = word.status;
+    // Scene 1 only: first cross-day rating of the day updates S / next_review_day.
+    // Scene 2 (same-day reappear) never rewrites the hidden long-term schedule.
+    const longTermRating = word.longTermRatingDate !== todayKey();
+    let rated;
+    if (longTermRating) {
+      rated = rateWord(word, grade);
+      if (grade !== 'easy' && rated.status !== 'done') {
+        const baseDays = Math.max(1, Math.round((Number(rated.interval) || DAY) / DAY));
+        const coeff = Math.max(0.7, Math.min(1.3, Number(data.settings.userMemoryCoeff) || 1));
+        const adjustedDays = Math.max(1, Math.min(3650, Math.round(baseDays * coeff)));
+        rated = {
+          ...rated,
+          interval: adjustedDays * DAY,
+          due: now() + adjustedDays * DAY,
+          stability: Math.max(Number(rated.stability) || 0, adjustedDays),
+          buriedUntil: 0,
+          loopCardsLeft: 0
+        };
+      }
+      rated = {
+        ...rated,
+        longTermRatingDate: todayKey(),
+        longTermGrade: grade,
+        dayLoopDate: '',
+        dayLoopDue: 0,
+        dayLoopCardsBefore: 0,
+        dayLoopPriority: 0,
+        dayLoopRemaining: 0
+      };
+    } else if (grade === 'again' || grade === 'hard') {
+      // Scene 2: only in-day order/priority, future schedule untouched.
+      rated = scheduleInDayLoop(word, grade);
+    } else {
+      rated = {
+        ...word,
+        dayLoopDate: '',
+        dayLoopDue: 0,
+        dayLoopCardsBefore: 0,
+        dayLoopPriority: 0,
+        dayLoopRemaining: 0,
+        updatedAt: now()
+      };
+    }
+
+    const idx = data.words.findIndex((w) => w.id === word.id);
+    if (idx === -1) return;
+    data.words[idx] = rated;
+    if (longTermRating && beforeStatus === 'new') data.session.newLearned += 1;
+    if (longTermRating && beforeStatus !== 'new' && beforeStatus !== 'done') data.session.reviewed += 1;
+    if (longTermRating && (grade === 'again' || grade === 'hard')) data.session.again += 1;
+    const progress = activeBookProgress();
+    if (longTermRating && beforeStatus === 'new') progress.newLearned += 1;
+    if (longTermRating && beforeStatus !== 'new' && beforeStatus !== 'done') progress.reviewed += 1;
+    if (longTermRating && (grade === 'again' || grade === 'hard')) progress.again += 1;
+    recordBookProgress(progress);
+    recordStudyEvent(beforeStatus, grade, longTermRating);
+    if (longTermRating) refreshUserMemoryCoeff();
+
+    const planResult = recordPlanItemRating(word.id, grade);
+    if (planResult.pendingConfirmation) {
+      if (grade === 'again' || grade === 'hard') {
+        // Reset/adjust hidden progress and re-enter short loop.
+        rated = scheduleInDayLoop(rated, grade, true);
+      } else if (grade === 'good') {
+        // Partial confirmation: keep the card in today's loop so progress can finish.
+        rated = scheduleConfirmationLoop(rated, planResult);
+      }
+      data.words[idx] = rated;
+    }
+    if (planResult.completed || rated.status === 'done') {
+      // Finished today's plan item (or mastered): leave the learning window.
+      rated = {
+        ...rated,
+        dayLoopDate: '',
+        dayLoopDue: 0,
+        dayLoopCardsBefore: 0,
+        dayLoopPriority: 0,
+        dayLoopRemaining: 0,
+        updatedAt: now()
+      };
+      data.words[idx] = rated;
+      removeFromLearningWindow(word.id);
+      if (rated.status === 'done') cancelActivePlanItems(word.id);
+    }
+    tickSmallLoops(word.id);
+    fillLearningWindow();
+
+    const preferred = options.preferredNextId && options.preferredNextId !== word.id
+      ? findWord(options.preferredNextId)
+      : null;
+    const nextWord = preferred && (isStudyWord(preferred) || isTodayReviewWord(preferred))
+      ? preferred
+      : chooseNext(word.id);
+    if (createCorrection) {
+      const correction = currentRatingCorrection();
+      if (correction.wordId === word.id) {
+        data.session.ratingCorrection = {
+          ...correction,
+          active: false,
+          liveWordId: nextWord ? nextWord.id : ''
+        };
+      }
+    }
+    setCurrent(nextWord);
+  }
+
   function publicWord(word) {
     if (!word) return null;
     const isTodayReview = data.session.todayReview
@@ -1409,7 +1683,9 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       retention,
       overdueRatio: Number(overdue.toFixed(2)),
       stubbornness: stubbornness(word),
-      priority: Number(priorityScore(word).toFixed(2))
+      priority: Number(priorityScore(word).toFixed(2)),
+      inTodayPlan: !!planItemForWord(word.id),
+      hasLearningRecord: hasLearningRecord(word)
     };
   }
 
@@ -1546,6 +1822,19 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       if (!['again', 'hard', 'good', 'easy'].includes(grade)) return;
       const word = currentWord();
       if (!word) return;
+      if (isRatingCorrectionView(word)) {
+        const correction = currentRatingCorrection();
+        const preferredNextId = correction.liveWordId || '';
+        restoreRatingCorrectionSnapshot(correction);
+        const restored = findWord(correction.wordId);
+        if (restored) {
+          applyStudyRating(restored, grade, { createCorrection: false, preferredNextId });
+        } else {
+          clearRatingCorrection();
+          save();
+        }
+        return;
+      }
       // Browsing (history/manual) never mutates long-term schedule; just return to live frontier.
       if (isBrowsing(data.navigation)) {
         const review = todayReviewState();
@@ -1559,94 +1848,20 @@ function repairMisplacedAgainSchedules(words, at = now()) {
         rateTodayReviewWord(word, grade);
         return;
       }
-      const beforeStatus = word.status;
-      // Scene 1 only: first cross-day rating of the day updates S / next_review_day.
-      // Scene 2 (same-day reappear) and scene 3 (previous/manual browse) never reach long-term writes.
-      const longTermRating = word.longTermRatingDate !== todayKey();
-      let rated;
-      if (longTermRating) {
-        rated = rateWord(word, grade);
-        if (grade !== 'easy' && rated.status !== 'done') {
-          const baseDays = Math.max(1, Math.round((Number(rated.interval) || DAY) / DAY));
-          const coeff = Math.max(0.7, Math.min(1.3, Number(data.settings.userMemoryCoeff) || 1));
-          const adjustedDays = Math.max(1, Math.min(365, Math.round(baseDays * coeff)));
-          rated = {
-            ...rated,
-            interval: adjustedDays * DAY,
-            due: now() + adjustedDays * DAY,
-            stability: Math.max(Number(rated.stability) || 0, adjustedDays),
-            buriedUntil: 0,
-            loopCardsLeft: 0
-          };
-        }
-        rated = {
-          ...rated,
-          longTermRatingDate: todayKey(),
-          longTermGrade: grade,
-          dayLoopDate: '',
-          dayLoopDue: 0,
-          dayLoopCardsBefore: 0,
-          dayLoopPriority: 0,
-          dayLoopRemaining: 0
-        };
-      } else if (grade === 'again' || grade === 'hard') {
-        // Scene 2: only in-day order/priority, future schedule untouched.
-        rated = scheduleInDayLoop(word, grade);
-      } else {
-        rated = {
-          ...word,
-          dayLoopDate: '',
-          dayLoopDue: 0,
-          dayLoopCardsBefore: 0,
-          dayLoopPriority: 0,
-          dayLoopRemaining: 0,
-          updatedAt: now()
-        };
-      }
-      const idx = data.words.findIndex((w) => w.id === word.id);
-      data.words[idx] = rated;
-      if (longTermRating && beforeStatus === 'new') data.session.newLearned += 1;
-      if (longTermRating && beforeStatus !== 'new' && beforeStatus !== 'done') data.session.reviewed += 1;
-      if (longTermRating && (grade === 'again' || grade === 'hard')) data.session.again += 1;
-      const progress = activeBookProgress();
-      if (longTermRating && beforeStatus === 'new') progress.newLearned += 1;
-      if (longTermRating && beforeStatus !== 'new' && beforeStatus !== 'done') progress.reviewed += 1;
-      if (longTermRating && (grade === 'again' || grade === 'hard')) progress.again += 1;
-      recordBookProgress(progress);
-      recordStudyEvent(beforeStatus, grade, longTermRating);
-      if (longTermRating) refreshUserMemoryCoeff();
-      const planResult = recordPlanItemRating(word.id, grade);
-      if (planResult.pendingConfirmation) {
-        if (grade === 'again' || grade === 'hard') {
-          // Reset confirmation progress and re-enter short loop.
-          rated = scheduleInDayLoop(rated, grade, true);
-        } else if (grade === 'good') {
-          // Partial confirmation: keep the card in today's loop so the next goods can happen.
-          rated = scheduleConfirmationLoop(rated, planResult);
-        }
-        data.words[idx] = rated;
-      }
-      if (planResult.completed || rated.status === 'done') {
-        // Finished today's plan item (or mastered): leave the learning window.
-        rated = {
-          ...rated,
-          dayLoopDate: '',
-          dayLoopDue: 0,
-          dayLoopCardsBefore: 0,
-          dayLoopPriority: 0,
-          dayLoopRemaining: 0,
-          updatedAt: now()
-        };
-        data.words[idx] = rated;
-        removeFromLearningWindow(word.id);
-        if (rated.status === 'done') cancelActivePlanItems(word.id);
-      }
-      tickSmallLoops(word.id);
-      fillLearningWindow();
-      setCurrent(chooseNext(word.id));
+      applyStudyRating(word, grade);
     },
     skip() {
       const word = currentWord();
+      if (word && isRatingCorrectionView(word)) {
+        setRatingCorrectionActive(false);
+        const correction = currentRatingCorrection();
+        const live = findWord(correction.liveWordId)
+          || findWord(data.navigation.liveWordId)
+          || chooseNext(word.id);
+        applyNavigation(returnToLive(data.navigation, live ? live.id : null), { forceReveal: false });
+        saveSoon();
+        return;
+      }
       if (isBrowsing(data.navigation)) {
         const stepped = goNext(data.navigation);
         if (!stepped.atLive) {
@@ -1670,27 +1885,17 @@ function repairMisplacedAgainSchedules(words, at = now()) {
       setCurrent(chooseNext(liveId), false, false, true);
     },
     previous() {
-      let nav = defaultNavigation(data.navigation);
-      for (let guard = 0; guard < 64; guard += 1) {
-        const beforeId = viewWordId(nav);
-        const beforeMode = nav.mode;
-        const beforeIndex = nav.index;
-        const candidate = goPrevious(nav);
-        const candidateId = viewWordId(candidate);
-        if (
-          !candidateId
-          || (candidateId === beforeId && candidate.mode === beforeMode && candidate.index === beforeIndex)
-        ) {
-          return;
-        }
-        if (findWord(candidateId)) {
-          applyNavigation(candidate, { forceReveal: true });
-          save();
-          return;
-        }
-        // Skip deleted/missing trail entries without getting stuck.
-        nav = removeWord(candidate, candidateId);
+      const correction = currentRatingCorrection();
+      if (!correction.wordId || correction.active) return;
+      const word = findWord(correction.wordId);
+      if (!word) {
+        clearRatingCorrection();
+        save();
+        return;
       }
+      data.session.ratingCorrection = { ...correction, active: true };
+      applyNavigation(enterManual(data.navigation, correction.wordId), { forceReveal: true });
+      save();
     },
     toggleFavorite() {
       const word = currentWord();
@@ -1795,8 +2000,8 @@ function repairMisplacedAgainSchedules(words, at = now()) {
     addNewWordsToPlan(ids, source = 'manual_new') {
       return addWordsToPlan(ids, 'new', source);
     },
-    addReviewWordsToPlan(ids) {
-      return addWordsToPlan(ids, 'review', 'manual_review');
+    addReviewWordsToPlan(ids, source = 'manual_review') {
+      return addWordsToPlan(ids, 'review', source);
     },
     addDueReviews,
     getPlan() {
