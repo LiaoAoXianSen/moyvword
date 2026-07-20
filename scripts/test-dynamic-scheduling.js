@@ -61,6 +61,17 @@ function findPublicWord(store, id) {
   assert(days(matureRated) >= 30, 'mature recognised word can jump to a long interval');
 }
 
+// Weak/new cards: hard may share the 1-day floor with again, but never go shorter.
+{
+  const t = now();
+  const fresh = createWord({ word: 'parasitic', meaning: 'adj. parasitic' }, 3);
+  const again = rateWord(fresh, 'again', t);
+  const hard = rateWord(fresh, 'hard', t);
+  assertEq(days(again), 1, 'new again lands on next-day floor');
+  assertEq(days(hard), 1, 'new hard can also be next-day (not forced to 2+)');
+  assert(days(hard) >= days(again), 'hard interval is never shorter than again');
+}
+
 (async () => {
   {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'moyv-schedule-loop-'));

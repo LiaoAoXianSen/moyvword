@@ -121,9 +121,14 @@ function safeNumber(value, fallback, min = 0) {
 }
 
 // Cross-day intervals (days). Only the first formal rating of the day writes these.
-// The app still keeps same-day reinforcement separately in store.js; this scheduler
-// only decides the hidden long-term next-review day.
+// Same-day reinforcement stays in store.js. Model sketch (Momo-like dual track):
+//   Δ ≈ -S * ln(R*) with R*≈0.9, then grade constraints:
+//   again: short floor (~1d for weak cards)
+//   hard:  >= again, but may also be 1d when stability is still tiny
+//   good:  dynamic long jump
+// UI may later preview "今日 / N天后"; this module only owns N.
 const DYNAMIC_MAX_DAYS = 3650;
+const TARGET_RETENTION = 0.9;
 const LEGACY_GOOD_STEPS = [1, 3, 7, 15, 30, 60, 90, 120, 180, 365];
 
 function wordStaticDifficulty(current) {
@@ -153,39 +158,74 @@ function fsrsScheduledDays(card, t) {
   return 0;
 }
 
+// Ideal spacing from stability: Δ = -S * ln(R*).
+function daysFromStability(stability) {
+  const s = Math.max(0.05, Number(stability) || 0);
+  return Math.max(1, Math.round(-s * Math.log(TARGET_RETENTION)));
+}
+
+function isWeakCard(current) {
+  const stability = Math.max(0, Number(current.stability) || 0);
+  const reviews = Math.max(0, Number(current.reviewCount) || 0);
+  return current.status === 'new' || reviews <= 0 || stability < 2.5;
+}
+
 function fallbackIntervalDays(current, grade) {
   const d = wordStaticDifficulty(current);
-  if (grade === 'again') return 1;
-  if (grade === 'hard') return d >= 7.5 ? 2 : 3;
+  const stability = Math.max(0, Number(current.stability) || 0);
+  const weak = isWeakCard(current);
+
+  if (grade === 'again') {
+    // Forgotten: brand-new/weak cards return next day; slightly known cards can wait a bit longer.
+    if (weak || d >= 7) return 1;
+    if (d >= 4.5) return 2;
+    return Math.min(3, Math.max(1, Math.round(daysFromStability(Math.max(stability, 1)) * 0.35)));
+  }
+
+  if (grade === 'hard') {
+    // Uncertain should be >= again. On weak/new cards both often land on 1 day
+    // (Momo-style "今日 / 1天后"); once stability grows, hard stretches further.
+    if (weak) return 1;
+    if (d >= 7.5) return 2;
+    if (d >= 4.5) return Math.max(2, Math.min(5, daysFromStability(Math.max(stability, 2))));
+    return Math.max(3, Math.min(11, daysFromStability(Math.max(stability, 3))));
+  }
+
   if (grade === 'easy') return DYNAMIC_MAX_DAYS;
 
-  // Fallback only: keep an old-step-ish floor, then bend it by per-word difficulty
-  // and existing stability so two mature cards are not forced into the same interval.
+  // Good fallback: bend legacy steps by difficulty + stability so mature cards diverge.
   const step = nextGoodStepIndex(current, 'good');
   const legacy = LEGACY_GOOD_STEPS[step] || 7;
-  const stability = Math.max(0, Number(current.stability) || 0);
   const difficultyFactor = clamp(1 + (5 - d) * 0.08, 0.72, 1.28);
-  return Math.max(1, Math.round(Math.max(legacy, stability * 1.25) * difficultyFactor));
+  const fromS = daysFromStability(Math.max(stability, legacy * 0.8));
+  return Math.max(1, Math.round(Math.max(legacy, fromS, stability * 1.25) * difficultyFactor));
 }
 
 function longTermIntervalDays(current, grade, fsrsCard, t) {
   const fallback = fallbackIntervalDays(current, grade);
   const fsrsDays = fsrsScheduledDays(fsrsCard, t);
-  let raw = fsrsDays > 0 ? fsrsDays : fallback;
+  const stability = Math.max(0, Number((fsrsCard && fsrsCard.stability) || current.stability) || 0);
+  const fromStability = daysFromStability(stability);
+  let raw = fsrsDays > 0 ? fsrsDays : Math.max(fallback, fromStability > 1 ? fromStability : fallback);
+
   if (grade === 'again') {
-    // Same-day relearning is handled outside this scheduler. For long-term planning,
-    // forgotten words return soon, but mature words can still vary mildly.
-    const stabilityHint = Math.round((Number(current.stability) || 0) * 0.18);
-    raw = Math.max(raw, stabilityHint || fallback);
-    return clamp(Math.round(raw), 1, 14);
+    // Same-day relearning is outside this scheduler. Long-term due stays soon.
+    const againDays = clamp(Math.round(Math.min(raw, Math.max(fallback, 1))), 1, 14);
+    return againDays;
   }
+
   if (grade === 'hard') {
-    return clamp(Math.round(Math.max(raw, fallback)), 2, 90);
+    // Always hard >= again. Allow 1-day hard for weak cards; do not force a 2-day floor.
+    const againFloor = fallbackIntervalDays(current, 'again');
+    const hardRaw = Math.max(raw, fallback, againFloor);
+    return clamp(Math.round(hardRaw), 1, 90);
   }
+
   if (grade === 'easy') {
     return DYNAMIC_MAX_DAYS;
   }
-  return clamp(Math.round(Math.max(raw, 1)), 1, DYNAMIC_MAX_DAYS);
+
+  return clamp(Math.round(Math.max(raw, fallback, 1)), 1, DYNAMIC_MAX_DAYS);
 }
 
 function buildFallbackSchedule(current, grade, t) {
