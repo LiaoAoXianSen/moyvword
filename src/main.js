@@ -109,16 +109,39 @@ function stripHeight(expanded = stripExpanded) {
   return expanded ? 132 : 34;
 }
 
+function displayWorkAreaForPoint(x, y) {
+  const point = {
+    x: Math.round(Number(x) || 0),
+    y: Math.round(Number(y) || 0)
+  };
+  try {
+    return screen.getDisplayNearestPoint(point).workArea;
+  } catch {
+    return screen.getPrimaryDisplay().workArea;
+  }
+}
+
+function clampToWorkArea(x, y, width, height, area) {
+  const safeWidth = Math.max(1, Math.round(Number(width) || 1));
+  const safeHeight = Math.max(1, Math.round(Number(height) || 1));
+  const maxX = area.x + Math.max(0, area.width - safeWidth);
+  const maxY = area.y + Math.max(0, area.height - safeHeight);
+  return {
+    x: Math.max(area.x, Math.min(Math.round(Number(x) || area.x), maxX)),
+    y: Math.max(area.y, Math.min(Math.round(Number(y) || area.y), maxY))
+  };
+}
+
 function applyStripAppearance() {
   if (!stripWindow || stripWindow.isDestroyed() || !store) return;
   const { width } = stripAppearance();
   const height = stripHeight();
-  stripWindow.setSize(width, height, false);
   const [x, y] = stripWindow.getPosition();
-  const area = screen.getPrimaryDisplay().workArea;
-  const nextX = Math.max(area.x, Math.min(x, area.x + area.width - width));
-  const nextY = Math.max(area.y, Math.min(y, area.y + area.height - height));
-  if (nextX !== x || nextY !== y) stripWindow.setPosition(nextX, nextY);
+  // Keep the strip on its current display (multi-monitor safe). Never re-clamp
+  // secondary-screen positions against the primary work area.
+  const area = displayWorkAreaForPoint(x, y);
+  const next = clampToWorkArea(x, y, width, height, area);
+  stripWindow.setBounds({ x: next.x, y: next.y, width, height }, false);
 }
 
 function createStripWindow() {
@@ -159,15 +182,14 @@ function createStripWindow() {
 }
 
 function resolveStripPosition() {
-  const fallback = { x: 340, y: 22 };
+  const primary = screen.getPrimaryDisplay().workArea;
+  const fallback = { x: primary.x + 340, y: primary.y + 22 };
   const saved = store && store.getState().settings.stripPosition;
   if (!saved || !Number.isFinite(saved.x) || !Number.isFinite(saved.y)) return fallback;
   const { width } = stripAppearance();
-  const area = screen.getPrimaryDisplay().workArea;
-  return {
-    x: Math.max(area.x, Math.min(saved.x, area.x + area.width - width)),
-    y: Math.max(area.y, Math.min(saved.y, area.y + area.height - stripHeight(false)))
-  };
+  const height = stripHeight(false);
+  const area = displayWorkAreaForPoint(saved.x, saved.y);
+  return clampToWorkArea(saved.x, saved.y, width, height, area);
 }
 
 function scheduleStripPositionSave() {
@@ -182,6 +204,26 @@ function saveStripPositionNow() {
   if (!stripWindow || stripWindow.isDestroyed() || !store) return;
   const [x, y] = stripWindow.getPosition();
   store.updateSettings({ stripPosition: { x, y } });
+}
+
+function toggleMainWindow() {
+  // Alt+E toggles: second press hides the management window.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      return;
+    }
+    if (mainWindow.isVisible()) {
+      mainWindow.hide();
+      return;
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  createMainWindow();
 }
 
 function createMainWindow() {
@@ -199,7 +241,7 @@ function createMainWindow() {
     minHeight: 560,
     show: false,
     icon: createAppIcon(),
-    title: '摸鱼单词v68版本',
+    title: '摸鱼单词v69版本',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -242,7 +284,7 @@ function createLookupWindow(query = '') {
     minHeight: 420,
     show: false,
     icon: createAppIcon(),
-    title: '摸鱼单词v68版本 · 查词',
+    title: '摸鱼单词v69版本 · 查词',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -274,8 +316,8 @@ function focusExistingApp() {
   if (stripWindow && !stripWindow.isDestroyed()) stripWindow.showInactive();
   dialog.showMessageBox(mainWindow || stripWindow, {
     type: 'info',
-    title: '摸鱼单词v68版本',
-    message: '摸鱼单词v68版本已经打开',
+    title: '摸鱼单词v69版本',
+    message: '摸鱼单词v69版本已经打开',
     detail: '已为你显示正在运行的窗口。',
     buttons: ['知道了']
   }).catch(() => {});
@@ -409,7 +451,7 @@ function perform(action) {
         openLookup();
         break;
       case 'main':
-        createMainWindow();
+        toggleMainWindow();
         break;
       default:
         break;
@@ -430,7 +472,7 @@ function registerShortcuts() {
 
 function createTray() {
   tray = new Tray(createAppIcon());
-  tray.setToolTip('摸鱼单词v68版本');
+  tray.setToolTip('摸鱼单词v69版本');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '显示横条', click: () => stripWindow && stripWindow.showInactive() },
     { label: '隐藏横条', click: () => stripWindow && stripWindow.hide() },
@@ -459,7 +501,7 @@ if (hasSingleInstanceLock) {
     createMainWindow();
   }).catch((error) => {
     logError('app.whenReady', error);
-    dialog.showErrorBox('摸鱼单词v68版本无法启动', '学习数据无法读取，已保留数据库与备份文件。请从备份恢复后重试。');
+    dialog.showErrorBox('摸鱼单词v69版本无法启动', '学习数据无法读取，已保留数据库与备份文件。请从备份恢复后重试。');
     app.quit();
   });
 }
@@ -648,7 +690,7 @@ ipcMain.handle('import:choose', async () => {
   return { state: store.getState(), imported };
 });
 ipcMain.handle('backup:save', async () => {
-  const defaultName = `摸鱼单词v68版本备份-${new Date().toISOString().slice(0, 10)}.sqlite`;
+  const defaultName = `摸鱼单词v69版本备份-${new Date().toISOString().slice(0, 10)}.sqlite`;
   const backupDirectory = store.getState().settings.backupDirectory || app.getPath('documents');
   const result = await dialog.showSaveDialog(mainWindow || stripWindow, {
     title: '备份学习数据',

@@ -1037,28 +1037,55 @@ dialog.settings::backdrop {
   white-space: nowrap;
 }
 
+.manual-new-block {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
 .manual-new-head,
-.manual-new-head label,
-.manual-new-head button,
+.manual-new-head > div,
+.manual-new-search-field,
 .manual-new-list,
-.manual-new-list label {
+.manual-new-list label,
+.manual-new-footer {
   min-width: 0;
 }
 
 .manual-new-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.manual-new-head label {
+.manual-new-head strong {
+  display: block;
   color: var(--ink);
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
 }
 
-#manualNewSearch {
+.manual-new-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.manual-new-search-field {
+  display: block;
   width: 100%;
+}
+
+#manualNewSearch,
+.continue-dialog #manualNewSearch,
+.manual-new-search-field #manualNewSearch {
+  display: block;
+  width: 100% !important;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .manual-new-list {
@@ -1069,28 +1096,79 @@ dialog.settings::backdrop {
   padding-right: 2px;
 }
 
-.manual-new-list label {
+.manual-new-block label,
+.continue-dialog .manual-new-list label,
+.continue-dialog .manual-new-search-field {
+  display: grid;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.manual-new-list label,
+.continue-dialog .manual-new-list label {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
+  align-items: start;
+  column-gap: 10px;
+  row-gap: 0;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
   border: 1px solid var(--line-soft);
-  border-radius: 7px;
+  border-radius: 10px;
   background: var(--surface);
+  text-align: left;
   cursor: pointer;
 }
 
+.manual-new-list label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  flex: none;
+}
+
 .manual-new-list span {
+  display: block;
+  min-width: 0;
   overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.manual-new-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 #manualNewCount {
   flex: 1;
+  min-width: 0;
   color: var(--muted);
   font-size: 13px;
+  text-align: left;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 #todayPlan,

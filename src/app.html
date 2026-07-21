@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.dictionaryapi.dev https://dict.youdao.com https://*.youdao.com; media-src 'self' https://dict.youdao.com https://*.youdao.com; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>摸鱼单词v68版本</title>
+    <title>摸鱼单词v69版本</title>
     <link rel="icon" href="../assets/icon.svg" />
     <link rel="stylesheet" href="./app.css" />
   </head>
@@ -13,7 +13,7 @@
       <div class="brand">
         <span class="mark">M</span>
         <div>
-          <strong>摸鱼单词v68版本</strong>
+          <strong>摸鱼单词v69版本</strong>
           <span id="activeBookName">默认单词本</span>
         </div>
       </div>
@@ -326,14 +326,20 @@
           </div>
           <div class="random-preview-list" id="randomPreviewList"></div>
         </section>
-        <section id="manualNewBlock" hidden>
+        <section id="manualNewBlock" class="manual-new-block" hidden>
           <div class="manual-new-head">
-            <label for="manualNewSearch">自主选择新词</label>
+            <div>
+              <strong>自主选择新词</strong>
+              <p>从当前单词本勾选想背的新词。</p>
+            </div>
             <button id="backToRandomNew" type="button">返回随机挑选</button>
           </div>
-          <input id="manualNewSearch" type="search" placeholder="搜索单词、释义或音标" autocomplete="off" />
+          <label class="manual-new-search-field" for="manualNewSearch">
+            <span class="sr-only">搜索新词</span>
+            <input id="manualNewSearch" type="search" placeholder="搜索单词、释义或音标" autocomplete="off" />
+          </label>
           <div class="manual-new-list" id="manualNewList" aria-label="可选新词"></div>
-          <div class="dialog-actions">
+          <div class="manual-new-footer">
             <span id="manualNewCount" aria-live="polite">未选择</span>
             <button id="confirmManualNew" type="button" disabled>加入今日计划</button>
           </div>
