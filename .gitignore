@@ -1,16 +1,22 @@
 node_modules/
 dist/
 *.log
+*.zip
+*.exe
 
 # Local app data and restore points
 data/*.sqlite
 data/*.sqlite.bak
 data/snapshots/
+data/backup-config.json
+data/mirror*/
+data/*.pre-*.sqlite
 
 # Build/release outputs
 release/
 
 # Local agent/session files
+.zcode/
 .zcode/plans/
 
 # Stale root copies; real app entry lives in src/
