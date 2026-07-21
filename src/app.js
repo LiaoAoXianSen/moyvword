@@ -835,7 +835,9 @@ function selectedRandomPreviewIds() {
 function renderManualNewList() {
   const list = byId('manualNewList');
   list.replaceChildren(...manualNewWords.map((word) => {
+    // Keep the same row chrome as random preview so both pickers feel identical.
     const row = document.createElement('label');
+    row.className = 'random-preview-row';
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.value = word.id;
@@ -846,7 +848,7 @@ function renderManualNewList() {
     return row;
   }));
   const count = manualNewSelected.size;
-  byId('manualNewCount').textContent = count ? `已选择 ${count} 个新词` : '未选择';
+  byId('manualNewCount').textContent = count ? `已选择 ${count} 个` : '未选择';
   byId('confirmManualNew').disabled = count === 0;
 }
 
@@ -893,6 +895,9 @@ const debouncedRefreshWords = debounce(() => refreshWords(false), 220);
 function showManualNewPicker(show) {
   byId('continueNewBlock').hidden = show;
   byId('manualNewBlock').hidden = !show;
+  if (show) {
+    byId('continueSummary').textContent = '从当前单词本勾选想背的新词。';
+  }
   if (!show) {
     byId('manualNewSearch').value = '';
     manualNewWords = [];
